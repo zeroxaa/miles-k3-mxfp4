@@ -1,13 +1,15 @@
-# Sandbox smoke: golden episodes on real sandbox APIs
+# Sandbox smoke: one episode on a real sandbox API
 
 `run.py` runs one (connector, backend, agent, benchmark) combination against
 the real platform; PASS iff the verifier returns reward 1.0. With the default
 agent `golden` — the task's own reference solution, executed by the
 connector's own mechanism — no GPU, no model and no session server are
 involved, so what a run proves is exactly the platform round trip: image
-build, sandbox create, exec, verifier, teardown. The offline unit and
-contract tests cannot see that layer; the GPU e2e suite covers the layers
-above it (harness, session server, training).
+resolution, sandbox create, exec, verifier, teardown.
+
+Why you would run it, what each provider has been proven to do, and how to add
+one: [Sandbox Providers](../../docs/developer/sandbox-providers.md). This file
+is the tool's own reference.
 
 | flag | values | notes |
 | --- | --- | --- |
@@ -35,13 +37,8 @@ python scripts/sandbox_smoke/run.py --connector harbor --backend e2b
 
 Other backends follow the same key-file contract (`DAYTONA_API_KEY` /
 `~/.config/daytona/api_key`, ...; see `miles/rollout/agentic/credentials.py`).
+Run it from any machine holding the provider key.
 
-Run it from any machine holding the provider key — deliberately not a
-scheduled workflow, so no sandbox credential lives in repository secrets.
-
-## Exercised so far
-
-| connector | backend | agent | task | last run |
-| --- | --- | --- | --- | --- |
-| harbor | e2b | golden | tb2/fix-git | 2026-09-02 PASS |
-| harbor | daytona | golden | tb2/fix-git | 2026-09-02 PASS |
+`tests/e2e/agentic/test_sandbox_golden.py` is the same episode as a registered
+test, one case per provider, for CI to collect; it calls this script rather
+than reimplementing it.

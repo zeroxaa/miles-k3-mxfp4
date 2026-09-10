@@ -279,6 +279,7 @@
      "developer/index",
      "developer/contributor-guide",
      "developer/architecture",
+     "developer/sandbox-providers",
      "developer/versions",
      "developer/debug",
      {

@@ -98,5 +98,5 @@ next to the code that reads it.
 
 This README's command has been run end to end: 8×H200, real training mode with
 the batch dials reduced, both trials scoring reward 1.0 and one GRPO step
-completed. Which sandbox providers this path has been run on is the provider
-table in [Agentic Environments](../../../docs/user-guide/environments.md).
+completed. Which sandbox providers this path has been run on is the table in
+[Sandbox Providers](../../../docs/user-guide/sandbox-providers.md).

@@ -3,12 +3,20 @@ title: Sandbox Providers
 description: Credentials and endpoints for the cloud sandbox providers a recipe can run its tasks on.
 ---
 
-Recipes that give each task its own container — Harbor's in-process mode and
-the OpenEnv Terminal-Bench-2 recipe — get that container from a sandbox
-provider. Which providers a recipe has been run on is the table in
-[Agentic Environments](/user-guide/environments); this page is how to set one
-up. The provider's SDK comes with the recipe's own extra (`harbor[e2b]`,
-`miles[e2b]`, ...), so that install line is in each recipe's README.
+Recipes that give each task its own container get it from a sandbox provider.
+Rows are providers, columns the connectors that can use them; a filled cell has
+had a real rollout run on it, and the link is the recipe.
+
+| Sandbox provider | Harbor | HUD | NeMo Gym | OpenEnv |
+|---|:---:|:---:|:---:|:---:|
+| [AgentENV](https://github.com/kvcache-ai/AgentENV) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/agentenv) |
+| [Daytona](https://www.daytona.io/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/swe-agent-harbor-daytona) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/hud) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/nemo-gym) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+| [E2B](https://e2b.dev/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+| [Modal](https://modal.com/) | | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+
+The rest of this page is how to set each provider up. Its SDK comes with the
+recipe's own extra (`harbor[e2b]`, `miles[e2b]`, ...), so that install line is
+in each recipe's README.
 
 Every provider takes its credential the same two ways: exported in the
 environment, or in a key file. On a multi-host cluster the file has to be

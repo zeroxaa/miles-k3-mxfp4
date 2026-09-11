@@ -23,10 +23,9 @@ as a user is [Sandbox Providers](/user-guide/sandbox-providers).
    is claimable without one.
 3. **A GPU rollout**: `HARBOR_ENV_TYPE=<name>` with
    `tests/e2e/agentic/test_harbor_rollout.py`. This is the bar for the
-   [environments table](/user-guide/environments).
-4. **A row in that table**, plus a section on the
-   [user page](/user-guide/sandbox-providers) if the provider needs anything
-   beyond a credential.
+   [provider table](/user-guide/sandbox-providers).
+4. **A cell in that table**, plus a setup section on the same page if the
+   provider needs anything beyond a credential.
 
 Nothing in step 1 needs a test change: the golden episode runs as one case per
 registry entry, and the rollout e2e reads the provider from the environment.

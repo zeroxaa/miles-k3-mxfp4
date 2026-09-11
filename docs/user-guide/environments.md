@@ -29,17 +29,9 @@ where the environment itself comes from:
 | [τ-bench](https://github.com/sierra-research/tau-bench) | generate function | [example](https://github.com/radixark/miles/tree/main/examples/experimental/tau-bench) |
 
 Sandbox providers are a different axis: they provision the task containers
-*inside* a connector rather than occupying a rollout layer. A filled cell has
-had a real rollout run on it; the link is the recipe. Setting a provider up is
-[Sandbox Providers](/user-guide/sandbox-providers); adding one is
-[its developer page](/developer/adding-a-sandbox-provider).
-
-| Sandbox provider | Harbor | HUD | NeMo Gym | OpenEnv |
-|---|:---:|:---:|:---:|:---:|
-| [AgentENV](https://github.com/kvcache-ai/AgentENV) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/agentenv) |
-| [Daytona](https://www.daytona.io/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/swe-agent-harbor-daytona) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/hud) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/nemo-gym) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
-| [E2B](https://e2b.dev/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
-| [Modal](https://modal.com/) | | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+*inside* a connector rather than occupying a rollout layer. Which providers work
+with which connector, and how to set one up, is
+[Sandbox Providers](/user-guide/sandbox-providers).
 
 Everything above is experimental, and listed alphabetically.
 

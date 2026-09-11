@@ -5,14 +5,16 @@ description: Credentials and endpoints for the cloud sandbox providers a recipe 
 
 Recipes that give each task its own container get it from a sandbox provider.
 Rows are providers, columns the connectors that can use them; a filled cell has
-had a real rollout run on it, and the link is the recipe.
+had a real rollout run on it. Each column header links to the connector's
+recipe, and a check carries its own link where that pair runs on a different
+one.
 
-| Sandbox provider | Harbor | HUD | NeMo Gym | OpenEnv |
+| Sandbox provider | [Harbor](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | [HUD](https://github.com/radixark/miles/tree/main/examples/experimental/hud) | [NeMo Gym](https://github.com/radixark/miles/tree/main/examples/experimental/nemo-gym) | [OpenEnv](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
 |---|:---:|:---:|:---:|:---:|
-| [AgentENV](https://github.com/kvcache-ai/AgentENV) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/agentenv) |
-| [Daytona](https://www.daytona.io/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/swe-agent-harbor-daytona) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/hud) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/nemo-gym) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
-| [E2B](https://e2b.dev/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
-| [Modal](https://modal.com/) | | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+| [AgentENV](https://github.com/kvcache-ai/AgentENV) | ✓ | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/agentenv) |
+| [Daytona](https://www.daytona.io/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/swe-agent-harbor-daytona) | ✓ | ✓ | ✓ |
+| [E2B](https://e2b.dev/) | ✓ | | | ✓ |
+| [Modal](https://modal.com/) | | | | ✓ |
 
 The rest of this page is how to set each provider up. Its SDK comes with the
 recipe's own extra (`harbor[e2b]`, `miles[e2b]`, ...), so that install line is

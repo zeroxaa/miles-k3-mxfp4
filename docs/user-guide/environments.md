@@ -29,19 +29,17 @@ where the environment itself comes from:
 | [τ-bench](https://github.com/sierra-research/tau-bench) | generate function | [example](https://github.com/radixark/miles/tree/main/examples/experimental/tau-bench) |
 
 Sandbox providers are a different axis: they provision the task containers
-*inside* a connector rather than occupying a rollout layer. The
-[in-process Harbor path](https://github.com/radixark/miles/tree/main/examples/experimental/harbor)
-passes `HARBOR_ENV_TYPE` straight to Harbor, so mechanically it reaches any
-Harbor backend. A pair is listed here once it has passed the GPU rollout e2e.
-Setting a provider up is [Sandbox Providers](/user-guide/sandbox-providers);
-adding one is [its developer page](/developer/adding-a-sandbox-provider).
+*inside* a connector rather than occupying a rollout layer. A filled cell has
+had a real rollout run on it; the link is the recipe. Setting a provider up is
+[Sandbox Providers](/user-guide/sandbox-providers); adding one is
+[its developer page](/developer/adding-a-sandbox-provider).
 
-| Sandbox provider | Used within | Guide |
-|---|---|---|
-| [AgentENV](https://github.com/kvcache-ai/AgentENV) | Harbor, OpenEnv | [Harbor](https://github.com/radixark/miles/tree/main/examples/experimental/harbor), [OpenEnv](https://github.com/radixark/miles/tree/main/examples/experimental/agentenv) |
-| [Daytona](https://www.daytona.io/) | Harbor, HUD, NeMo Gym, OpenEnv | [example](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
-| [E2B](https://e2b.dev/) | Harbor, OpenEnv | [Harbor](https://github.com/radixark/miles/tree/main/examples/experimental/harbor), [OpenEnv](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
-| [Modal](https://modal.com/) | OpenEnv | [example](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+| Sandbox provider | Harbor | HUD | NeMo Gym | OpenEnv |
+|---|:---:|:---:|:---:|:---:|
+| [AgentENV](https://github.com/kvcache-ai/AgentENV) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/agentenv) |
+| [Daytona](https://www.daytona.io/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/swe-agent-harbor-daytona) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/hud) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/nemo-gym) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+| [E2B](https://e2b.dev/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
+| [Modal](https://modal.com/) | | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
 
 Everything above is experimental, and listed alphabetically.
 

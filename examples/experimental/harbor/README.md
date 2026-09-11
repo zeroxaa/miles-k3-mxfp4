@@ -4,15 +4,14 @@ This example runs [Harbor](https://github.com/harbor-framework/harbor) trials
 **inside the rollout worker**: the agent function builds a `TrialConfig` and
 calls `Trial.run()` directly, with the task sandbox on a cloud
 [sandbox provider](../../../docs/user-guide/sandbox-providers.md) the worker
-reaches over the network, or any other Harbor `EnvironmentType`. There is no
-agent server.
+reaches over the network. There is no agent server.
 
 Compared with [`examples/swe-agent-harbor-docker`](../../swe-agent-harbor-docker/README.md):
 
 | | agent server (`swe-agent-harbor-docker`) | in-process (this example) |
 | --- | --- | --- |
 | Where `Trial.run()` runs | a separate host with a Docker daemon | the rollout worker |
-| Sandbox backends | `docker` (local), `daytona` via the server's env | any Harbor backend the worker can reach; `HARBOR_ENV_TYPE` is passed straight to Harbor |
+| Sandbox backends | `docker` (local), `daytona` via the server's env | any cloud sandbox provider the worker can reach |
 | Moving parts | trainer → HTTP → agent server → Harbor | trainer → Harbor |
 | Use it when | tasks must run on the local Docker daemon | sandboxes are cloud-hosted |
 

@@ -12,9 +12,9 @@ one.
 | Sandbox provider | [Harbor](https://github.com/radixark/miles/tree/main/examples/experimental/harbor) | [HUD](https://github.com/radixark/miles/tree/main/examples/experimental/hud) | [NeMo Gym](https://github.com/radixark/miles/tree/main/examples/experimental/nemo-gym) | [OpenEnv](https://github.com/radixark/miles/tree/main/examples/experimental/openenv) |
 |---|:---:|:---:|:---:|:---:|
 | [AgentENV](https://github.com/kvcache-ai/AgentENV) | ✓ | | | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/agentenv) |
-| [Daytona](https://www.daytona.io/) | [✓](https://github.com/radixark/miles/tree/main/examples/experimental/swe-agent-harbor-daytona) | ✓ | ✓ | ✓ |
+| [Daytona](https://www.daytona.io/) | ✓ | ✓ | ✓ | ✓ |
 | [E2B](https://e2b.dev/) | ✓ | | | ✓ |
-| [Modal](https://modal.com/) | | | | ✓ |
+| [Modal](https://modal.com/) | ✓ | | | ✓ |
 
 The rest of this page is how to set each provider up. Its SDK comes with the
 recipe's own extra (`harbor[e2b]`, `miles[e2b]`, ...), so that install line is

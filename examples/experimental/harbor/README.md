@@ -90,6 +90,14 @@ whatever is there.
 Backend-specific settings go in `HARBOR_ENV_KWARGS` as a JSON object (Harbor's
 `EnvironmentConfig.kwargs`), e.g. `'{"auto_snapshot": true}'` for Daytona.
 
+On Daytona, a sandbox orphaned by a killed rollout worker is reclaimed by
+Daytona's own timers: unless `HARBOR_ENV_KWARGS` sets them,
+`auto_stop_interval_mins` defaults to 540 and `auto_delete_interval_mins` to
+1440. Keep the stop interval above your longest trial — an in-sandbox agent
+makes no Daytona API calls, so a live trial looks idle to the timer.
+`HARBOR_OVERRIDE_STORAGE_MB` sizes each sandbox's disk, which is what a
+Daytona account's disk quota counts.
+
 Every remaining knob — timeouts and their layering, failure semantics, the
 full env-var reference — is documented in `harbor_agent_function.py`'s header,
 next to the code that reads it.

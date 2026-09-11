@@ -43,7 +43,7 @@ Env vars (read on the rollout worker):
   AGENT_MAX_INPUT_TOKENS / AGENT_MAX_OUTPUT_TOKENS, HARBOR_MAX_SEQ_LEN,
   HARBOR_AGENT_MAX_ITERATIONS, HARBOR_RESPONSE_LENGTH_POLICY,
   HARBOR_TERMINUS_2_ENABLE_SUMMARIZE, HARBOR_TERMINUS_2_LINEAR_HISTORY,
-  HARBOR_OVERRIDE_MEMORY_MB, HARBOR_TIMEOUT_MULTIPLIER,
+  HARBOR_OVERRIDE_MEMORY_MB, HARBOR_OVERRIDE_STORAGE_MB, HARBOR_TIMEOUT_MULTIPLIER,
   HARBOR_VERIFIER_TIMEOUT_SEC, HARBOR_ENV_BUILD_TIMEOUT_MULTIPLIER,
   HARBOR_AGENT_ALLOWED_HOSTS
                          same meaning as on the agent server
@@ -301,10 +301,24 @@ def _environment_config():
         raise ValueError("set HARBOR_ENV_TYPE to the Harbor environment type to run trials on (e.g. e2b, daytona)")
     env_type = EnvironmentType(raw)  # raises on an unknown backend instead of guessing
     kwargs = json.loads(os.getenv("HARBOR_ENV_KWARGS", "{}") or "{}")
-    override_memory_mb = _env_int("HARBOR_OVERRIDE_MEMORY_MB")
-    if override_memory_mb is not None and override_memory_mb <= 0:
-        raise ValueError("HARBOR_OVERRIDE_MEMORY_MB must be a positive integer")
-    return EnvironmentConfig(type=env_type, delete=True, override_memory_mb=override_memory_mb, kwargs=kwargs)
+    if env_type == EnvironmentType.DAYTONA:
+        # Harbor deletes a sandbox on teardown, but a killed rollout worker never
+        # reaches teardown, and Harbor's Daytona defaults (0 = never) leave that
+        # sandbox running forever. The stop interval must exceed the longest
+        # trial: an in-sandbox agent makes no Daytona API calls, so a live trial
+        # looks idle to the timer.
+        kwargs.setdefault("auto_stop_interval_mins", 540)
+        kwargs.setdefault("auto_delete_interval_mins", 1440)
+    overrides = {}
+    for field, var in (
+        ("override_memory_mb", "HARBOR_OVERRIDE_MEMORY_MB"),
+        ("override_storage_mb", "HARBOR_OVERRIDE_STORAGE_MB"),
+    ):
+        value = _env_int(var)
+        if value is not None and value <= 0:
+            raise ValueError(f"{var} must be a positive integer")
+        overrides[field] = value
+    return EnvironmentConfig(type=env_type, delete=True, kwargs=kwargs, **overrides)
 
 
 def build_trial_config(metadata: dict[str, Any], session_url: str, request_kwargs: dict[str, Any]):

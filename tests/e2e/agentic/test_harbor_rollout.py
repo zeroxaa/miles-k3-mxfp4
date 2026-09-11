@@ -25,6 +25,11 @@ it manually on a GPU devbox that has one:
     export HARBOR_ENV_TYPE=e2b
     export E2B_API_URL=http://<your-e2b-service> E2B_SANDBOX_URL=$E2B_API_URL
     # key at ~/.config/e2b/api_key
+    # what an interactive devbox shell sets and a plain ssh session does not:
+    # the Ray head's address (the launcher falls back to 127.0.0.1) and a file
+    # descriptor limit Ray's worker sockets fit in (1024 kills the raylet)
+    export MASTER_ADDR=$(hostname -i | awk '{print $1}')
+    ulimit -n $(ulimit -Hn)
     PYTHONPATH=. python tests/e2e/agentic/test_harbor_rollout.py
 
 Swap the extra and the backend name for another provider (``harbor[modal]``

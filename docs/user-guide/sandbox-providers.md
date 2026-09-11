@@ -57,7 +57,7 @@ mkdir -p ~/.config/daytona && echo dtn_... > ~/.config/daytona/api_key   # or ex
 ```
 
 Accounts carry a total-disk quota: keep concurrent sandboxes × per-sandbox disk
-under it.
+under it. A Harbor recipe sizes that disk with `HARBOR_OVERRIDE_STORAGE_MB`.
 
 ## Modal
 

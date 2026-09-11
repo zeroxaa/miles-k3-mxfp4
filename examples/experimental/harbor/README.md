@@ -90,9 +90,6 @@ whatever is there.
 Backend-specific settings go in `HARBOR_ENV_KWARGS` as a JSON object (Harbor's
 `EnvironmentConfig.kwargs`), e.g. `'{"auto_snapshot": true}'` for Daytona.
 
-On Daytona, `HARBOR_OVERRIDE_STORAGE_MB` sizes each sandbox's disk, which is
-what the account's disk quota counts.
-
 Every remaining knob — timeouts and their layering, failure semantics, the
 full env-var reference — is documented in `harbor_agent_function.py`'s header,
 next to the code that reads it.

@@ -1,0 +1,9 @@
+# Full 93-layer K3; layers 0-2 use KDA and layer 3 uses MLA full attention.
+kimi_k3_mxfp4: true
+kimi_k3_mxfp4_train_layers: [0, 1, 2, 3]
+kimi_k3_mxfp4_retain_layers: [1, 2, 3]
+recompute_granularity: null
+recompute_method: null
+recompute_num_layers: null
+offload_train: false
+offload_rollout: false

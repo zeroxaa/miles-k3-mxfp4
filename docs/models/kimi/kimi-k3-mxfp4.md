@@ -127,13 +127,15 @@ a full-model memory estimate. Nineteen focused CPU tests and four new model/
 launcher snapshot checks passed. The broader launcher suite retained the same
 47 failing/error cases as the unmodified pinned source, with no new failure IDs.
 
-## Full-model, first-three-layer training check
+## Full-model training check with selected layers
 
 `tools/kimi_k3_mxfp4_full_smoke.py` runs the complete language model with
-`examples/kimi_k3_mxfp4/three_layers.yaml`. Launch it with one torchrun process
-per GPU, three nodes and eight GPUs per node. It requires the full model args
-from `kimi-k3-mxfp4`, TP8 / EP8 / ETP1 / PP3, sequence parallelism, native K3
-LoRA targets, rank 4 / alpha 8, micro/global batch 1 and SGD with zero momentum.
+trainable layers selected by `--custom-config-path`. Use
+`examples/kimi_k3_mxfp4/three_layers.yaml` for layers 0–2, or
+`examples/kimi_k3_mxfp4/four_layers.yaml` for layers 0–3. Launch it with one
+torchrun process per GPU, three nodes and eight GPUs per node. It requires the
+full model args from `kimi-k3-mxfp4`, TP8 / EP8 / ETP1 / PP3, sequence parallelism,
+native K3 LoRA targets, rank 4 / alpha 8, micro/global batch 1 and SGD with zero momentum.
 Use `--full-smoke-report /results/full.json` and `--save /results/adapter`.
 The checkpoint path must contain all tensors belonging to the local 31-layer
 pipeline stage, plus the relevant embedding or output head and tokenizer files.
@@ -141,9 +143,27 @@ pipeline stage, plus the relevant embedding or output head and tokenizer files.
 The check uses authored text with next-token cross entropy at the final output,
 then performs two optimizer steps. It records forward and backward hooks for
 every local layer, checks that changed adapter tensors belong exclusively to
-layers 0, 1 and 2, compares every frozen adapter against its initial value, and
-saves native rank-sharded adapters and optimizer state. The aggregate JSON
-requires 24 distinct physical GPU UUIDs and coverage of all 93 layers.
+the configured trainable layers, compares every frozen adapter against its
+initial value, and saves native rank-sharded adapters and optimizer state.
+Each selected layer must have actual updates, including every supported
+attention projection's LoRA B tensor. The aggregate JSON requires 24 distinct
+physical GPU UUIDs and coverage of all 93 layers, and records the selected
+layers, attention types and verified attention updates.
+
+The first four layers have the following native LoRA targets. All their base
+weights, including norms and routers, remain frozen; both LoRA A and B train.
+
+| Zero-based layer | Attention type | Attention LoRA projections | MLP LoRA targets |
+|---|---|---|---|
+| 0 | KDA linear attention | `o_proj` | Dense MLP gate/up and down |
+| 1, 2 | KDA linear attention | `o_proj` | Routed and shared expert gate/up/down |
+| 3 (fourth layer) | MLA full attention | `o_proj`, `q_a_proj`, `kv_a_proj_with_mqa` | Routed and shared expert gate/up/down |
+
+The four-layer configuration selects `[0, 1, 2, 3]` for training and retains
+expanded expert weights in MoE layers `[1, 2, 3]`. LoRA rank, alpha and the
+attention implementations are unchanged. It can also be passed as
+`--experiment-config examples/kimi_k3_mxfp4/four_layers.yaml` to the offline
+launcher; that Ray/debug-GRPO integration path is still unvalidated.
 
 The three stages contain layers 0–30, 31–61 and 62–92. Only the first stage has
 trainable parameters; the later stages still compute activation gradients and
@@ -151,7 +171,8 @@ send them upstream. A single microbatch leaves pipeline stages idle during
 parts of the step, so this is a memory and correctness check rather than a
 throughput benchmark. The MXFP4 base remains packed; only active expert
 matrices are temporarily decoded to BF16. Layers 1 and 2 retain those decoded
-matrices for backward, while later MoE layers decode them again.
+matrices for backward in the three-layer configuration; the four-layer
+configuration also retains layer 3. Other MoE layers decode them again.
 
 Two compatibility details are explicit in the tool: marked KDA FP32 parameters
 are restored after Megatron's BF16 module wrapper, and `torch.optim.SGD` replaces
@@ -162,8 +183,9 @@ gradient synchronization and gradient statistics. No synthetic model or GPU
 substitutes are used. This tool does not exercise Ray, rollout generation or
 online adapter synchronization.
 
+### Three-layer result
 
-On 2026-09-11 the full-model check **passed on 24 distinct H200 GPUs** using
+On 2026-09-11 the three-layer check **passed on 24 distinct H200 GPUs** using
 PyTorch 2.11.0+cu129 and FLA 0.5.2. Both steps traversed all 93 layers in forward
 and backward and completed optimizer updates. Sequence length was 32, global
 batch 1, SGD learning rate `1e-4`, and activation recomputation was disabled.
@@ -186,3 +208,34 @@ output projections, the first layer's dense MLP, and the second/third layers'
 routed and shared expert MLPs. The tool saved 24 native adapter shards and 24
 optimizer/scheduler state files. A checkpoint reload and the online RL loop
 were not exercised by this check.
+
+### Four-layer result, including MLA full attention
+
+On 2026-09-11 at 22:38:41 UTC, the same full-model check **passed on 24 distinct
+H200 GPUs** with `four_layers.yaml`. Layers 0–3 were trainable and MoE layers
+1–3 retained their expanded expert weights. The remaining 89 layers' adapters
+and all base weights stayed frozen. Both steps covered all 93 layers in forward
+and backward, with sequence length 32, global batch 1, rank 4 / alpha 8, SGD
+learning rate `1e-4`, zero momentum and no activation recomputation.
+
+The fourth layer's `o_proj`, `q_a_proj` and `kv_a_proj_with_mqa` LoRA B tensors
+all changed on every first-stage rank. Its routed and shared expert MLP LoRA B
+tensors also changed. Each of these eight ranks had 46 trainable adapter tensors
+containing 13,028,096 local elements, including replicated tensors. After two
+steps, 23 B tensors per rank had changed. A tensors were also trainable, but
+their BF16 stored values were unchanged in this short check. Every frozen
+adapter was compared against its initial value and remained unchanged.
+
+| Pipeline stage | Zero-based layers | Trainable layers | PyTorch peak allocated per GPU |
+|---|---|---|---|
+| 0 | 0–30 | 0, 1, 2, 3 | 68.18–69.59 GiB |
+| 1 | 31–61 | None | 65.14–65.19 GiB |
+| 2 | 62–92 | None | 65.41–65.44 GiB |
+
+The step losses were `1.5504195690` and `1.5723326206`; gradient norms were
+`2.6606215464` and `0.0496122908`. Rank 0 took 228.42 and 88.81 seconds, using
+existing kernel caches. The loss increased on this short fixture; this check
+establishes execution and update scope, not training quality. The job exited
+successfully after saving 24 native adapter shards and 24 optimizer/scheduler
+state files. Nineteen focused CPU regression tests also passed. Checkpoint
+reload, long sequences and online RL/rollout synchronization remain untested.

@@ -1,4 +1,4 @@
-"""Train full K3 on 24 GPUs, updating only the first three layers' LoRA.
+"""Train full K3 on 24 GPUs, updating only the configured layers' LoRA.
 
 Launch with torchrun and the full kimi-k3-mxfp4 model arguments. This uses
 Miles' model, checkpoint, optimizer and gradient-finalization paths plus the
@@ -29,6 +29,7 @@ from miles.backends.megatron_utils.initialize import init
 from miles.backends.megatron_utils.lora_utils import save_lora_checkpoint
 from miles.backends.megatron_utils.model import finalize_model_grads_with_empty_cache, setup_model_and_optimizer
 from miles.utils.arguments import parse_args
+from miles_plugins.models.kimi_k3_mxfp4.options import layer_indices
 
 FIXTURE = "The capital of France is Paris. Water freezes at zero degrees Celsius. Two plus three equals five. "
 
@@ -74,7 +75,7 @@ def _forward(data_iterator, model_chunk):
     return output, _loss
 
 
-def _verify_layout(raw_model):
+def _verify_layout(raw_model, selected):
     layers = {}
     adapters = {}
     trainable = {}
@@ -87,17 +88,29 @@ def _verify_layout(raw_model):
                 if ".lora_adapter." in key:
                     adapters[key] = param
                 if param.requires_grad:
-                    assert index in {0, 1, 2} and ".lora_adapter." in key, key
+                    assert index in selected and ".lora_adapter." in key, key
                     trainable[key] = param
         layer_params = {id(param) for layer in chunk.decoder.layers for param in layer.parameters()}
         assert all(not param.requires_grad for param in chunk.parameters() if id(param) not in layer_params)
     assert len(layers) == 31
-    assert {int(name.split(".")[1]) for name in trainable} == set(layers) & {0, 1, 2}
+    assert {int(name.split(".")[1]) for name in trainable} == set(layers) & selected
     return layers, adapters, trainable
 
 
+def _attention_lora_b_names(layers, selected):
+    return {
+        f"layers.{index}.self_attention.lora_adapter.{projection}_lora_B"
+        for index, layer in layers.items()
+        if index in selected
+        for projection in (("o",) if layer.self_attention.is_kda else ("o", "q_a", "kv_a"))
+    }
+
+
 def _train(args, model, raw_model, optimizer, scheduler):
-    layers, adapters, trainable = _verify_layout(raw_model)
+    selected = layer_indices(args.kimi_k3_mxfp4_train_layers, num_layers=args.num_layers, option="train_layers")
+    layers, adapters, trainable = _verify_layout(raw_model, selected)
+    expected_attention_updates = _attention_lora_b_names(layers, selected)
+    assert expected_attention_updates <= trainable.keys(), "Missing trainable attention adapters"
     before = {name: param.detach().cpu().clone() for name, param in adapters.items()}
     observed = {"forward": set(), "backward": set()}
     handles = _observe_layers(raw_model, observed)
@@ -149,11 +162,14 @@ def _train(args, model, raw_model, optimizer, scheduler):
         print(f"FULL_STEP_DONE rank={dist.get_rank()} {json.dumps(record)}", flush=True)
     changed = [name for name, param in adapters.items() if not torch.equal(param.detach().cpu(), before[name])]
     assert all(name in trainable for name in changed), changed
-    assert {int(name.split(".")[1]) for name in changed} == set(layers) & {0, 1, 2}
+    assert {int(name.split(".")[1]) for name in changed} == set(layers) & selected
+    assert expected_attention_updates <= set(changed), "Some selected attention LoRA B tensors did not update"
     for handle in handles:
         handle.remove()
     return {
         "layers": sorted(layers),
+        "attention_types": {index: "KDA" if layer.self_attention.is_kda else "MLA" for index, layer in layers.items()},
+        "verified_attention_updates": sorted(expected_attention_updates),
         "steps": steps,
         "changed_adapters": changed,
         "trainable_adapter_names": sorted(trainable),
@@ -215,7 +231,9 @@ def main():
         assert {layer for item in reports for layer in item["layers"]} == set(range(93))
         result = {
             "status": "PASS",
-            "scope": "Full 93-layer K3 next-token training on 24 physical H200 GPUs; LoRA layers 0, 1, 2 only",
+            "scope": "Full 93-layer K3 next-token training on 24 physical H200 GPUs; configured LoRA layers only",
+            "train_layers": sorted(args.kimi_k3_mxfp4_train_layers),
+            "retain_bf16_layers": sorted(args.kimi_k3_mxfp4_retain_layers),
             "fixture": FIXTURE,
             "optimizer": args.optimizer,
             "learning_rate": args.lr,

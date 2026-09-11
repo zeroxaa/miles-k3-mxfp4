@@ -65,6 +65,7 @@ contract lands.
 import asyncio
 import json
 import logging
+import math
 import os
 import re
 from collections.abc import Callable
@@ -83,6 +84,11 @@ _SAFE_INSTANCE_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
 # Harbor exception class names -> the exit_status vocabulary the reward path reads.
 _TIMEOUT_EXCEPTIONS = {"AgentTimeoutError", "VerifierTimeoutError", "EnvironmentStartTimeoutError"}
 _OUTPUT_LIMIT_EXCEPTIONS = {"MaxSeqLenExceededError", "SingleTurnMaxSeqLenExceededError"}
+
+
+def _trial_timeout_s() -> int:
+    """The wall-clock cap run() puts on one trial; the longest a trial can live."""
+    return int(os.environ.get("AGENT_TRIAL_TIMEOUT", _DEFAULT_AGENT_TRIAL_TIMEOUT_S))
 
 
 def _env_flag(var: str) -> bool:
@@ -304,11 +310,17 @@ def _environment_config():
     if env_type == EnvironmentType.DAYTONA:
         # Harbor deletes a sandbox on teardown, but a killed rollout worker never
         # reaches teardown, and Harbor's Daytona defaults (0 = never) leave that
-        # sandbox running forever. The stop interval must exceed the longest
-        # trial: an in-sandbox agent makes no Daytona API calls, so a live trial
-        # looks idle to the timer.
-        kwargs.setdefault("auto_stop_interval_mins", 540)
+        # sandbox running forever. An in-sandbox agent makes no Daytona API calls,
+        # so a live trial looks idle to the timer: the stop interval is derived
+        # from the trial cap rather than fixed, so it always outlasts a trial.
+        trial_min = math.ceil(_trial_timeout_s() / 60)
+        kwargs.setdefault("auto_stop_interval_mins", trial_min + 30)
         kwargs.setdefault("auto_delete_interval_mins", 1440)
+        if kwargs["auto_stop_interval_mins"] <= trial_min:
+            raise ValueError(
+                f"auto_stop_interval_mins={kwargs['auto_stop_interval_mins']} would stop a Daytona sandbox "
+                f"mid-trial: AGENT_TRIAL_TIMEOUT allows {trial_min} minutes"
+            )
     overrides = {}
     for field, var in (
         ("override_memory_mb", "HARBOR_OVERRIDE_MEMORY_MB"),
@@ -439,7 +451,7 @@ async def run(
     request_kwargs = request_kwargs or {}
     session_url = resolve_session_url(base_url)
     instance_id = metadata.get("instance_id")
-    trial_timeout_s = int(os.environ.get("AGENT_TRIAL_TIMEOUT", _DEFAULT_AGENT_TRIAL_TIMEOUT_S))
+    trial_timeout_s = _trial_timeout_s()
 
     # Config errors (missing task dir, bad env vars, unresolvable provider key)
     # fail every sample the same way; raising beats training on silent all-zero

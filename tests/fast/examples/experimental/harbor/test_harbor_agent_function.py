@@ -129,19 +129,25 @@ def test_environment_type_is_passed_straight_through(tasks_dir, monkeypatch):
     assert cfg.environment.delete is True
 
 
-def test_daytona_gets_reclaim_timers_unless_set(tasks_dir, monkeypatch):
-    """Harbor's Daytona defaults never reclaim a sandbox a killed worker left behind."""
+def test_daytona_reclaim_timer_outlasts_the_trial_cap(tasks_dir, monkeypatch):
+    """Harbor's Daytona defaults never reclaim a sandbox a killed worker left
+    behind; ours must, without ever stopping a live trial."""
     monkeypatch.setenv("HARBOR_ENV_TYPE", "daytona")
+    monkeypatch.setenv("AGENT_TRIAL_TIMEOUT", "1200")  # 20 minutes
     cfg = haf.build_trial_config({"instance_id": "task-1", "agent_name": "mini-swe-agent"}, "http://s/v1", {})
-    assert cfg.environment.kwargs == {"auto_stop_interval_mins": 540, "auto_delete_interval_mins": 1440}
+    assert cfg.environment.kwargs == {"auto_stop_interval_mins": 50, "auto_delete_interval_mins": 1440}
 
-    monkeypatch.setenv("HARBOR_ENV_KWARGS", '{"auto_stop_interval_mins": 30, "auto_snapshot": true}')
+    monkeypatch.setenv("HARBOR_ENV_KWARGS", '{"auto_stop_interval_mins": 45, "auto_snapshot": true}')
     cfg = haf.build_trial_config({"instance_id": "task-1", "agent_name": "mini-swe-agent"}, "http://s/v1", {})
     assert cfg.environment.kwargs == {
-        "auto_stop_interval_mins": 30,  # the caller's value wins
+        "auto_stop_interval_mins": 45,  # the caller's value wins when it is safe
         "auto_delete_interval_mins": 1440,
         "auto_snapshot": True,
     }
+
+    monkeypatch.setenv("HARBOR_ENV_KWARGS", '{"auto_stop_interval_mins": 20}')
+    with pytest.raises(ValueError, match="mid-trial"):
+        haf.build_trial_config({"instance_id": "task-1", "agent_name": "mini-swe-agent"}, "http://s/v1", {})
 
 
 def test_reclaim_timers_are_daytona_only(tasks_dir, monkeypatch):

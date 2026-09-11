@@ -104,7 +104,10 @@ def _dropout(inputs: torch.Tensor, probability: float, training: bool) -> torch.
 
 
 def _grouped_linear(inputs: torch.Tensor, weights: torch.Tensor, tokens_per_expert: list[int]) -> torch.Tensor:
-    if inputs.is_cuda:
+    # CUDA grouped_mm requires 16-byte matrix strides. Small BF16 adapter ranks
+    # (e.g. 1, 2, 4) use ordinary GEMMs so rank remains an experiment choice.
+    aligned = all(size * inputs.element_size() % 16 == 0 for size in weights.shape[-2:])
+    if inputs.is_cuda and aligned:
         offsets = torch.as_tensor(tokens_per_expert, device=inputs.device, dtype=torch.int32).cumsum(
             0, dtype=torch.int32
         )
@@ -466,6 +469,12 @@ def apply_kimi_k3_lora(model, args):
             )
         else:
             raise TypeError(f"Kimi K3 layer {layer_idx} has unexpected MLP type {type(layer.mlp)}")
+
+    selected = getattr(model.config, "kimi_k3_mxfp4_train_layers", None)
+    if selected is not None:
+        from miles_plugins.models.kimi_k3_mxfp4.options import select_trainable_layers
+
+        select_trainable_layers(model, selected)
 
     trainable = sum(parameter.numel() for parameter in model.parameters() if parameter.requires_grad)
     total = sum(parameter.numel() for parameter in model.parameters())

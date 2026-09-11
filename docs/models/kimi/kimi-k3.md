@@ -10,6 +10,10 @@ below come from that branch. Results and background are in the
 
 ## 1. Model Introduction
 
+For the experimental frozen-MXFP4 trainer with selectable LoRA layers, see
+[Kimi K3 MXFP4 LoRA experiment](/models/kimi/kimi-k3-mxfp4). Its validation scope
+and offline launcher are separate from this BF16 trainer recipe.
+
 Kimi-K3 pairs two attention mechanisms in one stack, **KDA and MLA chosen per layer**,
 with an **896-expert latent MoE** at top-16. The checkpoint ships in **MXFP4**.
 

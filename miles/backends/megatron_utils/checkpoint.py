@@ -200,6 +200,22 @@ def _hide_critic_value_head_from_hf_load(ddp_model):
 
 
 def _load_checkpoint_hf(ddp_model, optimizer, args, load_path: str):
+    if getattr(args, "kimi_k3_mxfp4", False):
+        # Opt-in native packed loading bypasses Bridge's full BF16 expert allocation.
+        from megatron.core import parallel_state
+
+        from miles_plugins.models.kimi_k3_mxfp4.checkpoint import load_native_checkpoint
+
+        load_native_checkpoint(
+            unwrap_model(ddp_model),
+            load_path,
+            tp_rank=parallel_state.get_tensor_model_parallel_rank(),
+            tp_size=parallel_state.get_tensor_model_parallel_world_size(),
+        )
+        if optimizer is not None:
+            optimizer.reload_model_params()
+        return 0, 0
+
     assert args.megatron_to_hf_mode == "bridge", "Only bridge mode is supported for loading HF checkpoint"
     from megatron.bridge import AutoBridge
 

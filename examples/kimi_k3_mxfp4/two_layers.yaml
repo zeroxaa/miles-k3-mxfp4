@@ -1,0 +1,13 @@
+# Indices are zero-based. Layer 0 is dense; layer 1 is the first MoE layer.
+kimi_k3_mxfp4: true
+kimi_k3_mxfp4_train_layers: [0, 1]
+kimi_k3_mxfp4_retain_layers: [1]
+# Activation checkpointing is an independent knob. Start without it so the
+# selected expert weights survive from the original forward into backward.
+# To enable activation recompute: full / uniform / 1, respectively.
+recompute_granularity: null
+recompute_method: null
+recompute_num_layers: null
+# Offline training first: the packed-buffer offload path is not validated.
+offload_train: false
+offload_rollout: false

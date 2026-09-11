@@ -1,0 +1,9 @@
+# Full 93-layer K3; only layers 0, 1 and 2 have trainable adapters.
+kimi_k3_mxfp4: true
+kimi_k3_mxfp4_train_layers: [0, 1, 2]
+kimi_k3_mxfp4_retain_layers: [1, 2]
+recompute_granularity: null
+recompute_method: null
+recompute_num_layers: null
+offload_train: false
+offload_rollout: false

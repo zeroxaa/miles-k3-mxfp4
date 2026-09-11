@@ -43,7 +43,3 @@ registry entry, and the rollout e2e reads the provider from the environment.
 The golden test drives `scripts/sandbox_smoke/run.py`, which stays the entry
 point for the combinations CI does not fix — another agent harness, another
 task, another connector. Its README covers those axes.
-
-Neither runs in CI today: runners hold no sandbox credential. The golden case
-starts running the day one lands, with no code change; the rollout e2e also
-needs a route from the runner to the provider.

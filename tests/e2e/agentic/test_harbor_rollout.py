@@ -16,9 +16,8 @@ the launcher's own ``harbor_env_vars``, so adding a backend to
 combinations have actually been run is recorded in
 ``scripts/sandbox_smoke/README.md``.
 
-Registered ``disabled`` because CI runners carry no sandbox credential and
-have no route to a sandbox endpoint. Run it manually on a GPU devbox that has
-both:
+Registered ``disabled`` because CI runners carry no sandbox credential. Run
+it manually on a GPU devbox that has one:
 
     # on the devbox, from the repo root (2 GPUs)
     # uv, not pip: the branch carries a uv-workspace dependency pip cannot resolve
@@ -54,7 +53,7 @@ register_cuda_ci(
     suite="stage-c-2-gpu-h200",
     hardware=["hopper"],
     labels=["agentic"],
-    disabled="CI runners have no sandbox credential and no route to an endpoint; run it manually on a GPU devbox that has both",
+    disabled="CI runners hold no sandbox credential; run it manually on a GPU devbox that has one",
 )
 
 REPO = Path(__file__).resolve().parents[3]

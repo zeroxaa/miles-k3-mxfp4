@@ -1,13 +1,14 @@
 ---
-title: Sandbox Providers
-description: How a cloud sandbox provider plugs into Miles, how to add one, and what each has been proven to do.
+title: Adding a Sandbox Provider
+description: How a cloud sandbox provider plugs into Miles, and what it takes to add one.
 ---
 
 Connectors that run a task in a container (Harbor, OpenEnv) get that container
 from a sandbox provider. A provider is **one entry in `PROVIDER_CREDENTIALS`**
 (`miles/rollout/agentic/credentials.py`) — no connector code branches on it.
 The in-process Harbor path passes `HARBOR_ENV_TYPE` straight to Harbor, and
-both real-platform tests parametrize over that registry.
+both real-platform tests parametrize over that registry. Setting a provider up
+as a user is [Sandbox Providers](/user-guide/sandbox-providers).
 
 ## Adding one
 
@@ -20,11 +21,12 @@ both real-platform tests parametrize over that registry.
    This is the only step that proves the platform round trip — image
    resolution, sandbox create, exec, verifier, teardown — and nothing below it
    is claimable without one.
-3. **A GPU rollout** if the provider is to appear in the
-   [environments table](/user-guide/environments):
-   `HARBOR_ENV_TYPE=<name>` with `tests/e2e/agentic/test_harbor_rollout.py`.
-4. **A row in the table below**, which is where a claim about a
-   (connector, provider) pair lives.
+3. **A GPU rollout**: `HARBOR_ENV_TYPE=<name>` with
+   `tests/e2e/agentic/test_harbor_rollout.py`. This is the bar for the
+   [environments table](/user-guide/environments).
+4. **A row in that table**, plus a section on the
+   [user page](/user-guide/sandbox-providers) if the provider needs anything
+   beyond a credential.
 
 Nothing in step 1 needs a test change: the golden episode runs as one case per
 registry entry, and the rollout e2e reads the provider from the environment.
@@ -45,16 +47,3 @@ task, another connector. Its README covers those axes.
 Neither runs in CI today: runners hold no sandbox credential. The golden case
 starts running the day one lands, with no code change; the rollout e2e also
 needs a route from the runner to the provider.
-
-## What has been proven
-
-| Connector | Provider | Golden episode | GPU rollout |
-| --- | --- | --- | --- |
-| Harbor | [E2B](https://e2b.dev/) (cloud or self-hosted) | 2026-09-02 | 2026-09-09 |
-| Harbor | [Daytona](https://www.daytona.io/) | 2026-09-02 | — |
-| Harbor | [Modal](https://modal.com/) | 2026-09-10 | — |
-
-A dash is "not run", not "does not work": the registry reaches every provider
-mechanically, and a pair earns a date by being run. OpenEnv's own golden path
-is not wired into this driver yet; it lives in
-`examples/experimental/openenv/scan_golden.py`.

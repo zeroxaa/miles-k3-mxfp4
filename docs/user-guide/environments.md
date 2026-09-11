@@ -32,9 +32,9 @@ Sandbox providers are a different axis: they provision the task containers
 *inside* a connector rather than occupying a rollout layer. The
 [in-process Harbor path](https://github.com/radixark/miles/tree/main/examples/experimental/harbor)
 passes `HARBOR_ENV_TYPE` straight to Harbor, so mechanically it reaches any
-Harbor backend. A pair is listed here once it has passed the GPU rollout e2e;
-[Sandbox Providers](/developer/sandbox-providers) has the full evidence table
-and what it takes to add one.
+Harbor backend. A pair is listed here once it has passed the GPU rollout e2e.
+Setting a provider up is [Sandbox Providers](/user-guide/sandbox-providers);
+adding one is [its developer page](/developer/adding-a-sandbox-provider).
 
 | Sandbox provider | Used within | Guide |
 |---|---|---|

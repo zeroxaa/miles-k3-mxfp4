@@ -2,10 +2,10 @@
 
 This example runs [Harbor](https://github.com/harbor-framework/harbor) trials
 **inside the rollout worker**: the agent function builds a `TrialConfig` and
-calls `Trial.run()` directly, with the task sandbox on a cloud backend the worker
-reaches over the network — E2B Cloud or a self-hosted
-[AgentENV](../agentenv/README.md) (E2B API), Daytona, Modal, or any other Harbor
-`EnvironmentType`. There is no agent server.
+calls `Trial.run()` directly, with the task sandbox on a cloud
+[sandbox provider](../../../docs/user-guide/sandbox-providers.md) the worker
+reaches over the network, or any other Harbor `EnvironmentType`. There is no
+agent server.
 
 Compared with [`examples/swe-agent-harbor-docker`](../../swe-agent-harbor-docker/README.md):
 
@@ -35,19 +35,12 @@ uv pip install "harbor[e2b] @ git+https://github.com/harbor-framework/harbor@har
 
 ## 2. Provision the sandbox backend
 
-Every backend supplies its credential the same way, and
-`miles/rollout/agentic/credentials.py` is where that contract and each
-provider's variables are documented. What it comes down to per provider:
+Credentials and endpoints for every provider are in
+[Sandbox Providers](../../../docs/user-guide/sandbox-providers.md). The launch
+command below uses E2B:
 
 ```bash
-# E2B, cloud or self-hosted: the key first
 mkdir -p ~/.config/e2b && echo e2b_... > ~/.config/e2b/api_key
-# a self-hosted E2B-compatible service also needs the SDK pointed at it
-export E2B_API_URL=http://<server>:8000 E2B_SANDBOX_URL=http://<server>:8000
-# Daytona
-mkdir -p ~/.config/daytona && echo dtn_... > ~/.config/daytona/api_key
-# Modal: the SDK's own config file, written by its CLI
-uv tool install modal && modal token new
 ```
 
 Task directories: `HARBOR_TASKS_DIR` must contain one Harbor task dir per
@@ -106,6 +99,5 @@ next to the code that reads it.
 
 This README's command has been run end to end: 8×H200, real training mode with
 the batch dials reduced, both trials scoring reward 1.0 and one GRPO step
-completed. Which sandbox providers this path has been run on, and at what
-level, is the table in
-[Sandbox Providers](../../../docs/developer/sandbox-providers.md).
+completed. Which sandbox providers this path has been run on is the provider
+table in [Agentic Environments](../../../docs/user-guide/environments.md).

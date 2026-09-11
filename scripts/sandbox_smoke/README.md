@@ -7,9 +7,9 @@ connector's own mechanism — no GPU, no model and no session server are
 involved, so what a run proves is exactly the platform round trip: image
 resolution, sandbox create, exec, verifier, teardown.
 
-Why you would run it, what each provider has been proven to do, and how to add
-one: [Sandbox Providers](../../docs/developer/sandbox-providers.md). This file
-is the tool's own reference.
+How a provider plugs in and how to add one:
+[Adding a Sandbox Provider](../../docs/developer/adding-a-sandbox-provider.md).
+This file is the tool's own reference.
 
 | flag | values | notes |
 | --- | --- | --- |
@@ -30,14 +30,12 @@ uv pip install "harbor[e2b] @ git+https://github.com/harbor-framework/harbor@har
 mkdir -p ~/.config/e2b && echo e2b_... > ~/.config/e2b/api_key
 # the key FILE, not an exported var: this is the credential path training uses,
 # so a smoke run exercises it too (E2B_API_KEY in the env would shadow it)
-# self-hosted E2B-compatible endpoint instead of E2B Cloud:
-# export E2B_API_URL=http://<server>:8000 E2B_SANDBOX_URL=http://<server>:8000
 python scripts/sandbox_smoke/run.py --connector harbor --backend e2b
 ```
 
-Other backends follow the same key-file contract (`DAYTONA_API_KEY` /
-`~/.config/daytona/api_key`, ...; see `miles/rollout/agentic/credentials.py`).
-Run it from any machine holding the provider key.
+Endpoints and the other providers' credentials:
+[Sandbox Providers](../../docs/user-guide/sandbox-providers.md). Run it from
+any machine holding the provider key.
 
 `tests/e2e/agentic/test_sandbox_golden.py` is the same episode as a registered
 test, one case per provider, for CI to collect; it calls this script rather

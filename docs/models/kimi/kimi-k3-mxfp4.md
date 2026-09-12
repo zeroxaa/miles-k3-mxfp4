@@ -132,10 +132,14 @@ launcher snapshot checks passed. The broader launcher suite retained the same
 `tools/kimi_k3_mxfp4_full_smoke.py` runs the complete language model with
 trainable layers selected by `--custom-config-path`. Use
 `examples/kimi_k3_mxfp4/three_layers.yaml` for layers 0–2, or
-`examples/kimi_k3_mxfp4/four_layers.yaml` for layers 0–3. Launch it with one
-torchrun process per GPU, three nodes and eight GPUs per node. It requires the
-full model args from `kimi-k3-mxfp4`, TP8 / EP8 / ETP1 / PP3, sequence parallelism,
-native K3 LoRA targets, rank 4 / alpha 8, micro/global batch 1 and SGD with zero momentum.
+`examples/kimi_k3_mxfp4/four_layers.yaml` for layers 0–3.
+`examples/kimi_k3_mxfp4/all_layers_retain_all.yaml` selects all 93 layers for
+LoRA training and retains active experts' expanded BF16 weights in all 92 MoE
+layers. All three configurations disable activation checkpointing.
+Launch it with one torchrun process per GPU, three nodes and eight GPUs per
+node. It requires the full model args from `kimi-k3-mxfp4`, TP8 / EP8 / ETP1 /
+PP3, sequence parallelism, native K3 LoRA targets, rank 4 / alpha 8,
+micro/global batch 1 and SGD with zero momentum.
 Use `--full-smoke-report /results/full.json` and `--save /results/adapter`.
 The checkpoint path must contain all tensors belonging to the local 31-layer
 pipeline stage, plus the relevant embedding or output head and tokenizer files.
@@ -149,6 +153,13 @@ Each selected layer must have actual updates, including every supported
 attention projection's LoRA B tensor. The aggregate JSON requires 24 distinct
 physical GPU UUIDs and coverage of all 93 layers, and records the selected
 layers, attention types and verified attention updates.
+
+The tool also verifies the actual expert modules' retention flags, records
+allocated/reserved memory after each layer's forward, and counts expert weight
+decodes during forward and backward. With all MoE layers retained and no
+activation checkpointing, backward must perform zero expert weight decodes.
+If the pipeline runs out of memory, `rank<N>-oom.json` records the exception,
+completed layer coverage and memory measurements before the process fails.
 
 The first four layers have the following native LoRA targets. All their base
 weights, including norms and routers, remain frozen; both LoRA A and B train.
@@ -165,14 +176,20 @@ attention implementations are unchanged. It can also be passed as
 `--experiment-config examples/kimi_k3_mxfp4/four_layers.yaml` to the offline
 launcher; that Ray/debug-GRPO integration path is still unvalidated.
 
-The three stages contain layers 0–30, 31–61 and 62–92. Only the first stage has
-trainable parameters; the later stages still compute activation gradients and
-send them upstream. A single microbatch leaves pipeline stages idle during
-parts of the step, so this is a memory and correctness check rather than a
-throughput benchmark. The MXFP4 base remains packed; only active expert
+The three stages contain layers 0–30, 31–61 and 62–92. In the three- and
+four-layer configurations, only the first stage has trainable parameters;
+the later stages still compute activation gradients and send them upstream.
+The all-layer configuration trains LoRA in every stage. A single microbatch
+leaves pipeline stages idle during parts of the step, so this is a memory and
+correctness check rather than a throughput benchmark. The MXFP4 base remains packed; only active expert
 matrices are temporarily decoded to BF16. Layers 1 and 2 retain those decoded
 matrices for backward in the three-layer configuration; the four-layer
 configuration also retains layer 3. Other MoE layers decode them again.
+The all-layer/all-retained configuration keeps every active expert's decoded
+weight until its backward use, then releases it. It does not expand inactive
+experts or retain BF16 copies permanently between steps. Weight retention and
+activation checkpointing are independent choices; enabling all-layer LoRA
+does not require retaining all decoded weights.
 
 Two compatibility details are explicit in the tool: marked KDA FP32 parameters
 are restored after Megatron's BF16 module wrapper, and `torch.optim.SGD` replaces
@@ -239,3 +256,48 @@ establishes execution and update scope, not training quality. The job exited
 successfully after saving 24 native adapter shards and 24 optimizer/scheduler
 state files. Nineteen focused CPU regression tests also passed. Checkpoint
 reload, long sequences and online RL/rollout synchronization remain untested.
+
+### All-layer LoRA with every active expert weight retained
+
+On 2026-09-12 at 01:31:50 UTC, `all_layers_retain_all.yaml` **passed on 24
+distinct H200 GPUs**. All 93 layers' native LoRA adapters were trainable and
+all 92 MoE layers retained their active experts' expanded BF16 weights for
+backward. The full native checkpoint remained loaded, with all base weights
+frozen. Sequence length was 32, micro/global batch 1, rank 4 / alpha 8, SGD
+learning rate `1e-4`, zero momentum and no activation checkpointing or offload.
+
+Both steps covered all 93 layers in forward and backward. Every layer had
+actual adapter updates, including all supported attention LoRA B tensors on
+every rank. The tool verified both routed expert linears' retention flags in
+each MoE layer. Across all 24 ranks and both steps it counted 64,716 expert
+weight decodes in forward and **zero in backward**, confirming reuse of the
+retained BF16 weights.
+
+| Pipeline stage | Zero-based layers, all trainable | PyTorch peak allocated per GPU | Sampled device peak per GPU |
+|---|---|---|---|
+| 0 | 0–30 | 108.66–113.41 GiB | 116.39–121.40 GiB |
+| 1 | 31–61 | 101.24–106.40 GiB | 109.20–114.38 GiB |
+| 2 | 62–92 | 106.32–109.95 GiB | 114.04–117.65 GiB |
+
+Device usage was sampled with `nvidia-smi` every three seconds and includes
+allocations outside PyTorch. PyTorch allocator peaks are reported separately;
+its largest reserved-memory peak was 114.05 GiB. The maximum device sample was
+121.40 GiB out of 140.40 GiB reported by `nvidia-smi`. These measurements apply
+to this short fixture: longer sequences or more diverse tokens may activate
+more experts and retain more BF16 weights, in addition to larger activations.
+This run does not establish that longer sequences or larger batches fit.
+
+The local trainable element counts were 128,797,952, 132,994,048 and 133,059,840
+per rank in stages 0, 1 and 2 respectively, including replicated parameters.
+Both A and B were trainable; every LoRA B tensor changed, and 21 A tensors
+across all ranks also changed their BF16 stored values. All base parameters
+remained excluded from gradient updates.
+
+Losses were `1.5508167744` and `1.5647609234`; gradient norms were `2.5502069128`
+and `2.5645694285`. Rank 0 took 198.14 and 50.49 seconds using existing kernel
+caches. The loss increased, so this remains an execution and memory check,
+not evidence of quality improvement. The job exited successfully and saved
+24 adapter shards (6,321,158,868 bytes) plus 24 optimizer/scheduler state files
+(12,638,622,804 bytes). Nineteen focused CPU tests and formatting/lint checks
+passed. Ray/RL integration, online adapter synchronization and checkpoint
+reload were not exercised.

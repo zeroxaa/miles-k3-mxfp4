@@ -29,6 +29,7 @@ from miles.backends.megatron_utils.initialize import init
 from miles.backends.megatron_utils.lora_utils import save_lora_checkpoint
 from miles.backends.megatron_utils.model import finalize_model_grads_with_empty_cache, setup_model_and_optimizer
 from miles.utils.arguments import parse_args
+from miles_plugins.models.kimi_k3_mxfp4 import linear as mxfp4_linear
 from miles_plugins.models.kimi_k3_mxfp4.options import layer_indices
 
 FIXTURE = "The capital of France is Paris. Water freezes at zero degrees Celsius. Two plus three equals five. "
@@ -48,12 +49,25 @@ def _observe_layers(raw_model, observed):
 
             def forward_hook(module, inputs, output, index=index):
                 observed["forward"].add(index)
+                memory = {"layer": index, **_memory_stats()}
+                observed["forward_memory"].append(memory)
+                if int(os.environ["LOCAL_RANK"]) == 0:
+                    print(f"FULL_LAYER_MEMORY rank={dist.get_rank()} {json.dumps(memory)}", flush=True)
                 hidden = output[0] if isinstance(output, tuple) else output
                 if hidden.requires_grad:
                     hidden.register_hook(lambda gradient, index=index: observed["backward"].add(index))
 
             handles.append(layer.register_forward_hook(forward_hook))
     return handles
+
+
+def _memory_stats():
+    return {
+        "allocated_bytes": torch.cuda.memory_allocated(),
+        "reserved_bytes": torch.cuda.memory_reserved(),
+        "peak_allocated_bytes": torch.cuda.max_memory_allocated(),
+        "peak_reserved_bytes": torch.cuda.max_memory_reserved(),
+    }
 
 
 def _fixture_batch(args):
@@ -106,13 +120,74 @@ def _attention_lora_b_names(layers, selected):
     }
 
 
+def _verify_retention(layers, retained):
+    actual = []
+    for index, layer in layers.items():
+        experts = getattr(layer.mlp, "experts", None)
+        if experts is None:
+            continue
+        for linear in (experts.linear_fc1, experts.linear_fc2):
+            assert isinstance(linear, mxfp4_linear.FrozenMXFP4GroupedLinear)
+            assert linear.retain_bf16 == (index in retained)
+        if experts.linear_fc1.retain_bf16:
+            actual.append(index)
+    return sorted(actual)
+
+
+def _run_pipeline(args, model, batch, observed, step):
+    decoded = {"forward_calls": 0, "backward_calls": 0, "forward_bytes": 0, "backward_bytes": 0}
+    original_decode = mxfp4_linear.decode_weight
+
+    def counted_decode(packed, scales):
+        weight = original_decode(packed, scales)
+        phase = "backward" if observed["backward"] else "forward"
+        decoded[f"{phase}_calls"] += 1
+        decoded[f"{phase}_bytes"] += weight.numel() * weight.element_size()
+        return weight
+
+    try:
+        with patch.object(mxfp4_linear, "decode_weight", counted_decode):
+            losses = get_forward_backward_func()(
+                forward_step_func=_forward,
+                data_iterator=itertools.repeat(batch),
+                model=model,
+                num_microbatches=1,
+                seq_length=args.seq_length,
+                micro_batch_size=1,
+                forward_only=False,
+            )
+    except torch.cuda.OutOfMemoryError as exc:
+        failure = {
+            "status": "OOM",
+            "rank": dist.get_rank(),
+            "hostname": socket.gethostname(),
+            "step": step,
+            "error": str(exc),
+            "forward_layers": sorted(observed["forward"]),
+            "backward_layers": sorted(observed["backward"]),
+            "forward_memory": observed["forward_memory"],
+            "expert_decoding": decoded,
+            **_memory_stats(),
+        }
+        path = Path(args.full_smoke_report).with_name(f"rank{dist.get_rank()}-oom.json")
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(failure, indent=2) + "\n")
+        print(f"FULL_SMOKE_OOM report={path}", flush=True)
+        raise
+    all_retained = set(range(1, args.num_layers)) <= set(args.kimi_k3_mxfp4_retain_layers)
+    if all_retained and args.recompute_granularity is None:
+        assert decoded["backward_calls"] == 0, "Retained expert weights were decoded again in backward"
+    return losses, decoded
+
+
 def _train(args, model, raw_model, optimizer, scheduler):
     selected = layer_indices(args.kimi_k3_mxfp4_train_layers, num_layers=args.num_layers, option="train_layers")
     layers, adapters, trainable = _verify_layout(raw_model, selected)
+    retained = _verify_retention(layers, set(args.kimi_k3_mxfp4_retain_layers))
     expected_attention_updates = _attention_lora_b_names(layers, selected)
     assert expected_attention_updates <= trainable.keys(), "Missing trainable attention adapters"
     before = {name: param.detach().cpu().clone() for name, param in adapters.items()}
-    observed = {"forward": set(), "backward": set()}
+    observed = {"forward": set(), "backward": set(), "forward_memory": []}
     handles = _observe_layers(raw_model, observed)
     batch, token_ids = _fixture_batch(args)
     config = get_model_config(model[0])
@@ -129,15 +204,7 @@ def _train(args, model, raw_model, optimizer, scheduler):
             value.clear()
         started = time.monotonic()
         print(f"FULL_STEP_START rank={dist.get_rank()} step={step + 1}", flush=True)
-        losses = get_forward_backward_func()(
-            forward_step_func=_forward,
-            data_iterator=itertools.repeat(batch),
-            model=model,
-            num_microbatches=1,
-            seq_length=args.seq_length,
-            micro_batch_size=1,
-            forward_only=False,
-        )
+        losses, decoded = _run_pipeline(args, model, batch, observed, step + 1)
         assert observed["forward"] == set(layers), observed
         assert observed["backward"] == set(layers), observed
         assert all(
@@ -157,6 +224,9 @@ def _train(args, model, raw_model, optimizer, scheduler):
             "backward_layers": sorted(observed["backward"]),
             "seconds": time.monotonic() - started,
             "optimizer_update_successful": bool(successful),
+            "forward_memory": list(observed["forward_memory"]),
+            "expert_decoding": decoded,
+            **_memory_stats(),
         }
         steps.append(record)
         print(f"FULL_STEP_DONE rank={dist.get_rank()} {json.dumps(record)}", flush=True)
@@ -168,6 +238,7 @@ def _train(args, model, raw_model, optimizer, scheduler):
         handle.remove()
     return {
         "layers": sorted(layers),
+        "verified_retained_moe_layers": retained,
         "attention_types": {index: "KDA" if layer.self_attention.is_kda else "MLA" for index, layer in layers.items()},
         "verified_attention_updates": sorted(expected_attention_updates),
         "steps": steps,
@@ -214,6 +285,7 @@ def main():
         gpu_uuid=str(props.uuid),
         gpu_total_memory_bytes=props.total_memory,
         peak_allocated_bytes=torch.cuda.max_memory_allocated(),
+        peak_reserved_bytes=torch.cuda.max_memory_reserved(),
         tp_rank=parallel_state.get_tensor_model_parallel_rank(),
         ep_rank=parallel_state.get_expert_model_parallel_rank(),
         pp_rank=parallel_state.get_pipeline_model_parallel_rank(),

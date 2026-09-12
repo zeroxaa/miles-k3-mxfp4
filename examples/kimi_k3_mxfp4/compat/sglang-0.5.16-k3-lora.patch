@@ -1,0 +1,658 @@
+diff --git a/python/sglang/kernels/ops/moe/fused_moe_lora_kernel.py b/python/sglang/kernels/ops/moe/fused_moe_lora_kernel.py
+index b0c8548..0ca11e9 100644
+--- a/python/sglang/kernels/ops/moe/fused_moe_lora_kernel.py
++++ b/python/sglang/kernels/ops/moe/fused_moe_lora_kernel.py
+@@ -339,6 +339,7 @@ def _fused_moe_lora_expand(
+     split_k: int,
+     mul_routed_weight: bool = False,
+     offset: int = 0,
++    output_slice_stride: int = 0,
+ ) -> None:
+
+     b_ptr = _get_ptr(lora_b_stacked, device)
+@@ -403,8 +404,13 @@ def _fused_moe_lora_expand(
+         IS_PRIMARY=False,
+         **expand_config,
+     )
++    # Marlin pads the expert intermediate, so the [gate | up] slices of the base output
++    # sit at the padded stride while each LoRA slice is only N wide
++    if output_slice_stride == 0:
++        output_slice_stride = N
+     for i in range(num_slices):
+-        output[:, :, i * N + offset : (i + 1) * N + offset] += b_intermediate_cache1[i]
++        start = i * output_slice_stride + offset
++        output[:, :, start : start + N] += b_intermediate_cache1[i]
+
+
+ @torch.inference_mode()
+@@ -442,6 +448,7 @@ def _fused_moe_lora(
+     mul_routed_weight: bool = False,
+     fully_sharded: bool = False,
+     offset: int = 0,
++    output_slice_stride: int = 0,
+ ) -> None:
+     assert len(lora_a_stacked) == len(lora_b_stacked) > 0
+     assert (
+@@ -562,6 +569,7 @@ def _fused_moe_lora(
+         expand_split_k,
+         mul_routed_weight,
+         offset,
++        output_slice_stride,
+     )
+
+
+@@ -595,6 +603,7 @@ def _fused_moe_lora_fake(
+     mul_routed_weight: bool = False,
+     fully_sharded: bool = False,
+     offset: int = 0,
++    output_slice_stride: int = 0,
+ ) -> None:
+     return
+
+@@ -661,6 +670,7 @@ def _fused_moe_lora_expand_fake(
+     split_k: int,
+     mul_routed_weight: bool = False,
+     offset: int = 0,
++    output_slice_stride: int = 0,
+ ) -> None:
+     return
+
+diff --git a/python/sglang/srt/layers/quantization/mxfp4.py b/python/sglang/srt/layers/quantization/mxfp4.py
+index b95330f..91e3e70 100644
+--- a/python/sglang/srt/layers/quantization/mxfp4.py
++++ b/python/sglang/srt/layers/quantization/mxfp4.py
+@@ -1195,6 +1195,15 @@ class Mxfp4MoEMethod(FusedMoEMethodBase):
+         )
+         return self.runner.run(dispatch_output, quant_info)
+
++    def get_marlin_quant_info(self, layer):
++        # consumed by FusedMoEWithLoRA's marlin branch
++        from sglang.srt.layers.quantization.mxfp4_marlin_moe import (
++            build_marlin_moe_quant_info,
++        )
++
++        assert self.use_marlin, "Marlin quant info requires the Marlin backend"
++        return build_marlin_moe_quant_info(layer)
++
+     def _apply_marlin(self, layer, dispatch_output):
+         """MXFP4 x BF16 MoE via the Marlin runner. The quant_info (incl. the
+         dispatcher's EP mapping) is shared with
+diff --git a/python/sglang/srt/lora/layers.py b/python/sglang/srt/lora/layers.py
+index 55e71f7..3584c5d 100644
+--- a/python/sglang/srt/lora/layers.py
++++ b/python/sglang/srt/lora/layers.py
+@@ -49,6 +49,10 @@ class BaseLayerWithLoRA(nn.Module):
+     def forward(self, x: torch.Tensor):
+         return self.base_layer.forward(x)
+
++    @property
++    def lora_active(self) -> bool:
++        return self.set_lora and self.lora_backend.batch_info is not None
++
+     def set_lora_info(self, *args):
+         pass
+
+@@ -757,6 +761,10 @@ class RowParallelLinearWithLoRA(BaseLayerWithLoRA):
+             )
+             input_parallel = splitted_input[tp_rank].contiguous()
+
++        # K3 gates o_proj's input in a forward patch this path bypasses; apply it here
++        if hasattr(self.base_layer, "lora_input_transform"):
++            input_parallel = self.base_layer.lora_input_transform(input_parallel)
++
+         bias_ = (
+             None
+             if (self.base_layer.tp_rank > 0 or self.base_layer.skip_bias_add)
+@@ -942,6 +950,7 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
+         )
+         self._uses_interleaved_gate_up = (
+             getattr(base_layer.moe_runner_config, "gemm1_alpha", None) is not None
++            and base_layer.moe_runner_config.gate_up_interleaved
+         )
+
+         # Initialize triton_lora moe runner for batches with lora enabled
+@@ -997,17 +1006,7 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
+         )
+
+         if runner_backend.is_marlin():
+-            from sglang.srt.layers.quantization.compressed_tensors.compressed_tensors import (
+-                CompressedTensorsFusedMoEMethod,
+-            )
+-            from sglang.srt.layers.quantization.modelopt_quant import (
+-                ModelOptNvFp4FusedMoEMethod,
+-            )
+-
+-            assert isinstance(
+-                base_layer.quant_method,
+-                (CompressedTensorsFusedMoEMethod, ModelOptNvFp4FusedMoEMethod),
+-            ), (
++            assert hasattr(base_layer.quant_method, "get_marlin_quant_info"), (
+                 f"Marlin MoE backend requires a quant method exposing "
+                 f"get_marlin_quant_info, got {type(base_layer.quant_method).__name__}"
+             )
+@@ -1080,6 +1079,11 @@ class FusedMoEWithLoRA(BaseLayerWithLoRA):
+             tp_rank=self.tp_rank,
+             hidden_size=getattr(self.base_layer, "hidden_size", 0),
+             lora_use_virtual_experts=self.lora_use_virtual_experts,
++            marlin_intermediate_size=(
++                self._quant_info.w2_qweight.shape[1] * 16
++                if self._lora_runner_backend.is_marlin()
++                else 0
++            ),
+         )
+
+     def forward(self, hidden_states: torch.Tensor, topk_output: TopKOutput, **kwargs):
+diff --git a/python/sglang/srt/lora/lora.py b/python/sglang/srt/lora/lora.py
+index c154e1c..2d3ff16 100644
+--- a/python/sglang/srt/lora/lora.py
++++ b/python/sglang/srt/lora/lora.py
+@@ -60,9 +60,11 @@ class LoRAAdapter(nn.Module):
+         load_config: LoadConfig,
+         lora_backend: BaseLoRABackend,
+         base_model: Optional[torch.nn.Module] = None,
++        keep_weights_on_device: bool = False,
+     ):
+         super().__init__()
+         self.uid: str = uid
++        self.keep_weights_on_device: bool = keep_weights_on_device
+         self.config: LoRAConfig = config
+         assert self.config.hf_config["peft_type"].lower() == "lora"
+         self.base_hf_config: AutoConfig = base_hf_config
+@@ -161,6 +163,23 @@ class LoRAAdapter(nn.Module):
+
+         self._normalize_weights()
+
++    def _stage_weight(self, loaded_weight: torch.Tensor) -> torch.Tensor:
++        # streamed weights are CUDA-IPC views into the trainer's buckets, valid until the adapter is
++        # installed and the session closes; a full-adapter clone would not fit next to the base
++        if self.keep_weights_on_device and loaded_weight.is_cuda:
++            return loaded_weight
++        return loaded_weight.cpu()
++
++    def release_staged_weights(self):
++        """Drop the staged copies once installed in the memory pool; the adapter cannot be reinstalled."""
++        for layer in self.layers:
++            layer.weights.clear()
++            layer.pinned_weights.clear()
++        self.embedding_layers.clear()
++        self.pinned_embedding_layers.clear()
++        self.added_tokens_embeddings.clear()
++        self.pinned_added_tokens_embeddings.clear()
++
+     def _process_weight(self, name: str, loaded_weight: torch.Tensor):
+         from sglang.srt.lora.utils import get_normalized_target_modules
+
+@@ -175,7 +194,7 @@ class LoRAAdapter(nn.Module):
+
+         layer_id = get_layer_id(name)
+         if layer_id is not None:
+-            self.layers[layer_id].weights[name] = loaded_weight.cpu()
++            self.layers[layer_id].weights[name] = self._stage_weight(loaded_weight)
+         elif "embed_tokens" in name or "lm_head" in name:
+             # Check if this module is declared in target_modules before loading.
+             # When normalized_target_modules is {"all"} (e.g. target_modules was
+@@ -186,14 +205,14 @@ class LoRAAdapter(nn.Module):
+                 "all" in normalized_target_modules
+                 or module_name in normalized_target_modules
+             ):
+-                self.embedding_layers[name] = loaded_weight.cpu()
++                self.embedding_layers[name] = self._stage_weight(loaded_weight)
+             else:
+                 logger.debug(
+                     f"Skipping {name} as '{module_name}' is not in adapter's target_modules: {self.config.target_modules}"
+                 )
+         elif "input_embeddings" in name or "output_embeddings" in name:
+             # added/extra token emb
+-            self.added_tokens_embeddings[name] = loaded_weight.cpu()
++            self.added_tokens_embeddings[name] = self._stage_weight(loaded_weight)
+             assert loaded_weight.shape[0] == self.config.lora_added_tokens_size, (
+                 f"LoRA adapter {self.uid} has lora_added_tokens_size {self.config.lora_added_tokens_size} specified in the config, "
+                 f"but the loaded weight '{name}' has shape {loaded_weight.shape[0]} in first dimension"
+diff --git a/python/sglang/srt/lora/lora_manager.py b/python/sglang/srt/lora/lora_manager.py
+index 498cf47..20653ec 100644
+--- a/python/sglang/srt/lora/lora_manager.py
++++ b/python/sglang/srt/lora/lora_manager.py
+@@ -93,6 +93,9 @@ class LoRAManager:
+             server_args.experts_shared_outer_loras
+         )
+         self.lora_use_virtual_experts: bool = server_args.lora_use_virtual_experts
++        if server_args.lora_no_cpu_backup:
++            raise ValueError("This compatibility path requires CPU-backed adapters")
++        self.lora_no_cpu_backup = False
+         self.lora_strict_loading: bool = getattr(
+             server_args, "lora_strict_loading", False
+         )
+@@ -799,6 +802,7 @@ class LoRAManager:
+             experts_shared_outer_loras=self.experts_shared_outer_loras,
+             strict_loading=self.lora_strict_loading,
+             enable_lora_overlap_loading=self.enable_lora_overlap_loading,
++            lora_no_cpu_backup=self.lora_no_cpu_backup,
+         )
+
+         # Initializing memory pool with base model
+diff --git a/python/sglang/srt/lora/lora_moe_runner_marlin.py b/python/sglang/srt/lora/lora_moe_runner_marlin.py
+index 731d5b8..a75bee0 100644
+--- a/python/sglang/srt/lora/lora_moe_runner_marlin.py
++++ b/python/sglang/srt/lora/lora_moe_runner_marlin.py
+@@ -30,6 +30,7 @@ if _is_cuda:
+     from sglang.kernels.ops.moe.moe_wna16_marlin import moe_wna16_marlin_gemm
+     from sglang.srt.layers.moe.fused_moe_triton.fused_marlin_moe import (
+         get_scalar_type,
++        situ_and_mul,
+     )
+     from sglang.srt.layers.moe.moe_runner.triton_utils.fused_moe import (
+         moe_align_block_size,
+@@ -69,7 +70,10 @@ class MarlinLoraRunnerCore:
+         topk_weights = topk_output.topk_weights
+         topk_ids = topk_output.topk_ids
+
+-        assert runner_config.activation == "silu", "Only SiLU activation is supported."
++        assert runner_config.is_gated and runner_config.activation in {
++            "silu",
++            "situ",
++        }, f"Only gated SiLU/SiTU is supported, got {runner_config.activation}."
+         assert (
+             torch.cuda.get_device_capability(hidden_states.device)[0] >= 9
+         ), "MarlinLoraRunnerCore requires CUDA compute capability >= 9"
+@@ -80,6 +84,15 @@ class MarlinLoraRunnerCore:
+         N = quant_info.w2_qweight.shape[1] * 16
+         topk = topk_ids.shape[1]
+         num_bits = quant_info.weight_bits
++        # same rule as fused_experts_none_to_marlin: the E8M0 marlin kernels have no atomic-add path
++        is_mxfp4_marlin = (
++            num_bits == 4
++            and quant_info.w13_qzeros is None
++            and quant_info.w2_qzeros is None
++            and quant_info.w13_scales.dtype == torch.float8_e8m0fnu
++            and quant_info.w2_scales.dtype == torch.float8_e8m0fnu
++        )
++        use_atomic_add = not is_mxfp4_marlin
+
+         for block_size_m in [8, 16, 32, 48, 64]:
+             if M * topk / E / block_size_m < 0.9:
+@@ -141,7 +154,7 @@ class MarlinLoraRunnerCore:
+             size_n=2 * N,
+             size_k=K,
+             is_k_full=quant_info.is_k_full,
+-            use_atomic_add=True,
++            use_atomic_add=use_atomic_add,
+             use_fp32_reduce=True,
+             is_zp_float=False,
+         )
+@@ -157,7 +170,20 @@ class MarlinLoraRunnerCore:
+         intermediate_cache2 = torch.empty(
+             (M * topk, N), device=hidden_states.device, dtype=hidden_states.dtype
+         )
+-        silu_and_mul(intermediate_cache1.view(-1, 2 * N), intermediate_cache2)
++        if runner_config.activation == "situ":
++            # same beta mapping as fused_marlin_moe
++            situ_and_mul(
++                intermediate_cache2,
++                intermediate_cache1.view(-1, 2 * N),
++                situ_beta=(
++                    runner_config.gemm1_alpha
++                    if runner_config.gemm1_alpha is not None
++                    else 4.0
++                ),
++                linear_beta=runner_config.gemm1_clamp_limit,
++            )
++        else:
++            silu_and_mul(intermediate_cache1.view(-1, 2 * N), intermediate_cache2)
+
+         # Stage 3: Down (Marlin)
+         intermediate_cache3 = torch.empty(
+@@ -190,7 +216,7 @@ class MarlinLoraRunnerCore:
+             size_n=K,
+             size_k=N,
+             is_k_full=quant_info.is_k_full,
+-            use_atomic_add=True,
++            use_atomic_add=use_atomic_add,
+             use_fp32_reduce=True,
+             is_zp_float=False,
+         )
+diff --git a/python/sglang/srt/lora/lora_moe_runners.py b/python/sglang/srt/lora/lora_moe_runners.py
+index 7ffa971..f3c655c 100644
+--- a/python/sglang/srt/lora/lora_moe_runners.py
++++ b/python/sglang/srt/lora/lora_moe_runners.py
+@@ -189,6 +189,7 @@ class LoRAInfo:
+     tp_rank: int = 0
+     hidden_size: int = 0
+     lora_use_virtual_experts: bool = False
++    marlin_intermediate_size: int = 0
+
+
+ @dataclass
+@@ -337,6 +338,11 @@ def _add_lora_gate_up_delta(
+     is_gated = gate_up_a.shape[2] > r
+     if is_gated:
+         inter_size = gate_up_b.shape[2] // 2
++        physical_inter_size = lora_info.marlin_intermediate_size or inter_size
++        assert gate_up_dim == 2 * physical_inter_size
++        assert inter_size <= physical_inter_size
++        if lora_info.lora_use_virtual_experts and inter_size != physical_inter_size:
++            raise NotImplementedError("Padded Marlin output requires nonvirtual LoRA experts")
+         lora_a_stacked = [gate_up_a[:, :, :r, :], gate_up_a[:, :, r : 2 * r, :]]
+         lora_b_stacked = [
+             gate_up_b[:, :, :inter_size, :],
+@@ -390,6 +396,11 @@ def _add_lora_gate_up_delta(
+             expand_num_stages=2,
+             expand_split_k=1,
+             fully_sharded=lora_info.fully_sharded,
++            output_slice_stride=(
++                lora_info.marlin_intermediate_size
++                if is_gated and lora_info.marlin_intermediate_size
++                else 0
++            ),
+         )
+
+
+@@ -417,6 +428,9 @@ def _add_lora_down_delta(
+
+     down_lora_a = lora_info.down_lora_a_weights
+     down_lora_b = lora_info.down_lora_b_weights
++    if lora_info.marlin_intermediate_size:
++        assert down_lora_a.shape[-1] <= intermediate_input.shape[-1]
++        intermediate_input = intermediate_input[:, :down_lora_a.shape[-1]]
+     if lora_info.experts_shared_outer_loras and not lora_info.lora_use_virtual_experts:
+         down_lora_b = down_lora_b.expand(-1, lora_info.num_experts, -1, -1)
+
+diff --git a/python/sglang/srt/lora/marlin_lora_temp/lora_layer.py b/python/sglang/srt/lora/marlin_lora_temp/lora_layer.py
+index 82f454c..716b154 100644
+--- a/python/sglang/srt/lora/marlin_lora_temp/lora_layer.py
++++ b/python/sglang/srt/lora/marlin_lora_temp/lora_layer.py
+@@ -16,17 +16,7 @@ if TYPE_CHECKING:
+
+ def init_experimental_sgl_marlin_lora(layer, base_layer) -> None:
+     """Store Marlin quantization metadata on the wrapped layer."""
+-    from sglang.srt.layers.quantization.compressed_tensors.compressed_tensors import (
+-        CompressedTensorsFusedMoEMethod,
+-    )
+-    from sglang.srt.layers.quantization.modelopt_quant import (
+-        ModelOptNvFp4FusedMoEMethod,
+-    )
+-
+-    assert isinstance(
+-        base_layer.quant_method,
+-        (CompressedTensorsFusedMoEMethod, ModelOptNvFp4FusedMoEMethod),
+-    ), (
++    assert hasattr(base_layer.quant_method, "get_marlin_quant_info"), (
+         f"experimental_sgl_marlin requires a quant method exposing "
+         f"get_marlin_quant_info, got {type(base_layer.quant_method).__name__}"
+     )
+diff --git a/python/sglang/srt/lora/mem_pool.py b/python/sglang/srt/lora/mem_pool.py
+index 587d3a6..09cfe59 100644
+--- a/python/sglang/srt/lora/mem_pool.py
++++ b/python/sglang/srt/lora/mem_pool.py
+@@ -145,7 +145,12 @@ class LoRAMemoryPool:
+         experts_shared_outer_loras: bool = False,
+         strict_loading: bool = False,
+         enable_lora_overlap_loading: bool = False,
++        lora_no_cpu_backup: bool = False,
+     ):
++        assert not (
++            lora_no_cpu_backup and enable_lora_overlap_loading
++        ), "--lora-no-cpu-backup drops the staged weights right after install, which overlap loading still reads"
++        self.lora_no_cpu_backup: bool = lora_no_cpu_backup
+         self.base_hf_config: AutoConfig = base_hf_config
+         self.num_layer: int = base_hf_config.num_hidden_layers
+         self.max_loras_per_batch: int = max_loras_per_batch
+@@ -561,10 +566,12 @@ class LoRAMemoryPool:
+             cfg = base_model.config
+             if hasattr(cfg, "get_text_config"):
+                 cfg = cfg.get_text_config()
++            # DeepSeek-style configs say n_shared_experts, Kimi K3 says num_shared_experts.
+             has_shared_experts = (
+-                hasattr(cfg, "shared_expert_intermediate_size")
+-                and cfg.shared_expert_intermediate_size > 0
+-            ) or (getattr(cfg, "n_shared_experts", 0) or 0) > 0
++                (getattr(cfg, "shared_expert_intermediate_size", 0) or 0) > 0
++                or (getattr(cfg, "n_shared_experts", 0) or 0) > 0
++                or (getattr(cfg, "num_shared_experts", 0) or 0) > 0
++            )
+             has_moe = self._has_moe_module(base_model)
+
+             # Shape functions automatically handle both 3D (standard) and 4D (MoE)
+@@ -781,6 +788,12 @@ class LoRAMemoryPool:
+
+             # Select victim using eviction policy
+             victim_uid = self.eviction_policy.select_victim(candidates_to_use)
++            if victim_uid is not None and self.lora_no_cpu_backup:
++                raise RuntimeError(
++                    f"Refusing to evict LoRA adapter '{victim_uid}': --lora-no-cpu-backup dropped its "
++                    "staged weights after installation, so it could never be reloaded. Increase "
++                    "--max-loras-per-batch."
++                )
+
+             # Evict the selected victim
+             victim_buffer_id = self.uid_to_buffer_id[victim_uid]
+@@ -810,6 +823,44 @@ class LoRAMemoryPool:
+                 )
+                 self.uid_to_buffer_id[uid] = buffer_id
+                 self.buffer_id_to_uid[buffer_id] = uid
++                if self.lora_no_cpu_backup and lora_adapter is not None:
++                    lora_adapter.release_staged_weights()
++
++    def install_streamed_adapter(
++        self,
++        uid: str,
++        lora_adapter: LoRAAdapter,
++        lora_modules: List[Dict[str, torch.nn.Module]],
++        lora_embed_tokens_module: Optional[BaseLayerWithLoRA],
++        lora_lm_head_module: Optional[BaseLayerWithLoRA],
++    ) -> None:
++        """--lora-no-cpu-backup: install into a free slot right after streaming, before the
++        staged device views are dropped."""
++        if uid in self.uid_to_buffer_id:
++            buffer_id = self.uid_to_buffer_id[uid]
++        elif EMPTY_SLOT in self.buffer_id_to_uid:
++            buffer_id = self.buffer_id_to_uid.index(EMPTY_SLOT)
++        elif None in self.uid_to_buffer_id:
++            # the base-model placeholder (e.g. from graph capture) has nothing to reload
++            buffer_id = self.uid_to_buffer_id.pop(None)
++            self.eviction_policy.remove(None)
++        else:
++            raise RuntimeError(
++                f"No free LoRA memory pool slot for streamed adapter '{uid}'; "
++                "--lora-no-cpu-backup cannot evict, increase --max-loras-per-batch."
++            )
++        self.load_lora_weight_to_buffer(
++            uid,
++            buffer_id,
++            lora_adapter,
++            lora_modules,
++            lora_embed_tokens_module,
++            lora_lm_head_module,
++        )
++        self.uid_to_buffer_id[uid] = buffer_id
++        self.buffer_id_to_uid[buffer_id] = uid
++        self.eviction_policy.mark_used(uid)
++        lora_adapter.release_staged_weights()
+
+     def _clear_buffer_slot_for_base(self, buffer_id: int) -> None:
+         """Make an evicted slot safe for graph-captured base-model replay."""
+diff --git a/python/sglang/srt/lora/utils.py b/python/sglang/srt/lora/utils.py
+index 16459ea..e2fcc60 100644
+--- a/python/sglang/srt/lora/utils.py
++++ b/python/sglang/srt/lora/utils.py
+@@ -147,7 +147,7 @@ def get_hidden_dim(
+                 and layer_idx % moe_freq == 0
+             ):
+                 moe_inter = getattr(config, "moe_intermediate_size", None)
+-                n_shared = getattr(config, "n_shared_experts", None)
++                n_shared = getattr(config, "n_shared_experts", None) or getattr(config, "num_shared_experts", None)
+                 if moe_inter is not None and n_shared is not None:
+                     inter = moe_inter * n_shared
+             return config.hidden_size, inter * 2
+@@ -161,7 +161,7 @@ def get_hidden_dim(
+                 and layer_idx % moe_freq == 0
+             ):
+                 moe_inter = getattr(config, "moe_intermediate_size", None)
+-                n_shared = getattr(config, "n_shared_experts", None)
++                n_shared = getattr(config, "n_shared_experts", None) or getattr(config, "num_shared_experts", None)
+                 if moe_inter is not None and n_shared is not None:
+                     inter = moe_inter * n_shared
+             return inter, config.hidden_size
+@@ -205,13 +205,13 @@ def get_hidden_dim(
+                 getattr(config, "moe_intermediate_size", None)
+                 or config.intermediate_size
+             )
+-            return config.hidden_size, moe_inter * 2
++            return getattr(config, "routed_expert_hidden_size", None) or config.hidden_size, moe_inter * 2
+         elif module_name == "down_proj_moe":
+             moe_inter = (
+                 getattr(config, "moe_intermediate_size", None)
+                 or config.intermediate_size
+             )
+-            return moe_inter, config.hidden_size
++            return moe_inter, getattr(config, "routed_expert_hidden_size", None) or config.hidden_size
+         elif module_name == "embed_tokens":
+             # For embedding: input is vocab_size (as embedding lookup), output is hidden_size
+             # if contain extra tokens will be added; otherwise is 0.
+diff --git a/python/sglang/srt/models/kimi_k3.py b/python/sglang/srt/models/kimi_k3.py
+index b7f61cf..adee451 100644
+--- a/python/sglang/srt/models/kimi_k3.py
++++ b/python/sglang/srt/models/kimi_k3.py
+@@ -994,11 +994,19 @@ class KimiK3MoE(nn.Module):
+                 shared.down_proj.weight, torch.Tensor
+             )
+         assert shared is not None
++        shared_act = shared.act_fn(gate_up)
+         _k3_bf16_gemm(
+-            shared.act_fn(gate_up),
++            shared_act,
+             shared.down_proj.weight,
+             out=shared_output,
+         )
++        from sglang.srt.lora.layers import BaseLayerWithLoRA
++
++        down_proj = shared.down_proj
++        if isinstance(down_proj, BaseLayerWithLoRA) and down_proj.lora_active:
++            # the base GEMM bypassed the wrapper; LoRA B must land in the same buffer the tail add reads
++            lora_output = down_proj.apply_lora(shared_output, shared_act)
++            assert lora_output.data_ptr() == shared_output.data_ptr()
+
+     def _get_fused_norm_params(self) -> tuple[torch.Tensor, float]:
+         norm = self.routed_expert_norm
+@@ -1030,6 +1038,11 @@ class KimiK3MoE(nn.Module):
+         gate_up, router_logits, routed_input = torch.split(
+             fused, self._front_sizes, dim=-1
+         )
++        from sglang.srt.lora.layers import BaseLayerWithLoRA
++
++        gate_up_proj = self.shared_experts.gate_up_proj
++        if isinstance(gate_up_proj, BaseLayerWithLoRA) and gate_up_proj.lora_active:
++            gate_up = gate_up_proj.apply_lora(gate_up.contiguous(), hidden_states)
+         if num_tokens > 1 and _is_hip and not _aiter_k3_opt:
+             router_logits = router_logits.contiguous()
+         if num_tokens > 1 and self._moe_front_needs_contiguous:
+@@ -1765,9 +1778,10 @@ class KimiK3MLAAttention(DeepseekV2AttentionMLA):
+                 if self._gate_alt_stream is not None
+                 else 0
+             )
+-            _orig_o_proj_forward = self.o_proj.forward
++            o_proj = self.o_proj
++            _orig_o_proj_forward = o_proj.forward
+
+-            def _gated_o_proj_forward(x, *args, **kwargs):
++            def _apply_output_gate(x):
+                 gate_input = self._gate_hidden_states
+                 self._gate_hidden_states = None
+                 precomputed = self._gate_precomputed
+@@ -1791,9 +1805,13 @@ class KimiK3MLAAttention(DeepseekV2AttentionMLA):
+                         x = mla_output_gate.kimi_k3_mla_output_gate(x, gate)
+                     else:
+                         x = x * torch.sigmoid(gate)
+-                return _orig_o_proj_forward(x, *args, **kwargs)
++                return x
++
++            def _gated_o_proj_forward(x, *args, **kwargs):
++                return _orig_o_proj_forward(_apply_output_gate(x), *args, **kwargs)
+
+-            self.o_proj.forward = _gated_o_proj_forward
++            o_proj.lora_input_transform = _apply_output_gate
++            o_proj.forward = _gated_o_proj_forward
+
+     def _precompute_output_gate(self, hidden_states: torch.Tensor) -> None:
+         """Issue the output-gate GEMM on the alt stream so it overlaps the
+diff --git a/python/sglang/srt/server_args.py b/python/sglang/srt/server_args.py
+index ea9bdc6..fb52d65 100644
+--- a/python/sglang/srt/server_args.py
++++ b/python/sglang/srt/server_args.py
+@@ -2769,6 +2769,11 @@ class ServerArgs:
+         "Enable asynchronous LoRA weight loading in order to overlap H2D transfers with GPU compute. This should be enabled if you find that your LoRA workloads are bottlenecked by adapter weight loading, for example when frequently loading large LoRA adapters.",
+         NS("lora"),
+     ] = None
++    lora_no_cpu_backup: A[
++        bool,
++        "Keep streamed LoRA weights on the GPU and drop the staged copy once the adapter is installed in the memory pool, instead of holding a host copy per TP rank. Evicting an adapter from the pool is then refused, so every loaded adapter needs its own slot.",
++        NS("lora"),
++    ] = False
+     max_lora_rank: A[
+         Optional[int],
+         "The maximum rank of LoRA adapters. If not specified, it will be automatically inferred from the adapters provided in --lora-paths.",
+diff --git a/python/sglang/srt/utils/torch_memory_saver_adapter.py b/python/sglang/srt/utils/torch_memory_saver_adapter.py
+index ad98e59..e0d1774 100644
+--- a/python/sglang/srt/utils/torch_memory_saver_adapter.py
++++ b/python/sglang/srt/utils/torch_memory_saver_adapter.py
+@@ -1,4 +1,11 @@
+ import logging
++import json
++import os
++import socket
++import time
++from pathlib import Path
++
++import torch
+ from abc import ABC
+ from contextlib import contextmanager
+
+@@ -74,10 +81,10 @@ class _TorchMemorySaverAdapterReal(TorchMemorySaverAdapter):
+         return _memory_saver.disable()
+
+     def pause(self, tag: str):
+-        return _memory_saver.pause(tag=tag)
++        return _trace_transfer("pause", tag)
+
+     def resume(self, tag: str):
+-        return _memory_saver.resume(tag=tag)
++        return _trace_transfer("resume", tag)
+
+     @property
+     def enabled(self):
+@@ -110,3 +117,36 @@ class _TorchMemorySaverAdapterNoop(TorchMemorySaverAdapter):
+     @property
+     def enabled(self):
+         return False
++
++
++def _trace_transfer(operation, tag):
++    trace_dir = os.environ.get("K3_RL_TRACE_DIR")
++    function = getattr(_memory_saver, operation)
++    if not trace_dir:
++        return function(tag=tag)
++    torch.cuda.synchronize()
++    before_free, total = torch.cuda.mem_get_info()
++    started = time.monotonic()
++    result = function(tag=tag)
++    torch.cuda.synchronize()
++    seconds = time.monotonic() - started
++    after_free, _ = torch.cuda.mem_get_info()
++    record = {
++        "operation": operation,
++        "tag": tag,
++        "seconds": seconds,
++        "hostname": socket.gethostname(),
++        "gpu": torch.cuda.current_device(),
++        "before_used_bytes": total - before_free,
++        "after_used_bytes": total - after_free,
++        "memory_delta_bytes": after_free - before_free,
++        "timestamp": time.time(),
++    }
++    directory = Path(trace_dir)
++    directory.mkdir(parents=True, exist_ok=True)
++    with (directory / f"rollout-tms-{socket.gethostname()}-{os.getpid()}.jsonl").open(
++        "a"
++    ) as stream:
++        stream.write(json.dumps(record) + "\n")
++    logger.info("K3_RL_TMS %s", json.dumps(record))
++    return result

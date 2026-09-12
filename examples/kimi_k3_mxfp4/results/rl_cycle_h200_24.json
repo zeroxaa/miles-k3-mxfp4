@@ -1,0 +1,503 @@
+{
+  "status": "TWO_RL_CYCLES_PASSED_WITH_DIAGNOSTIC_IO_PREFETCH",
+  "date_utc": "2026-09-12",
+  "base_revision": "a590ce090cb049c93a33dfe8c208ec652aa20503",
+  "num_gpus": 24,
+  "gpu": "NVIDIA H200",
+  "num_language_layers": 93,
+  "lora_rank": 4,
+  "lora_alpha": 8,
+  "trainable_layers": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23,
+    24,
+    25,
+    26,
+    27,
+    28,
+    29,
+    30,
+    31,
+    32,
+    33,
+    34,
+    35,
+    36,
+    37,
+    38,
+    39,
+    40,
+    41,
+    42,
+    43,
+    44,
+    45,
+    46,
+    47,
+    48,
+    49,
+    50,
+    51,
+    52,
+    53,
+    54,
+    55,
+    56,
+    57,
+    58,
+    59,
+    60,
+    61,
+    62,
+    63,
+    64,
+    65,
+    66,
+    67,
+    68,
+    69,
+    70,
+    71,
+    72,
+    73,
+    74,
+    75,
+    76,
+    77,
+    78,
+    79,
+    80,
+    81,
+    82,
+    83,
+    84,
+    85,
+    86,
+    87,
+    88,
+    89,
+    90,
+    91,
+    92
+  ],
+  "training_parallelism": "TP8 EP8 PP3",
+  "rollout_parallelism": "TP8 EP1 PP3",
+  "seq_length": 32,
+  "responses_per_update": 2,
+  "optimizer": "SGD lr=1e-4, momentum=0",
+  "orchestration": "Experimental HTTP/filesystem harness; not the Ray train.py driver",
+  "transport": "Native Miles HF LoRA export -> shared safetensors -> SGLang dynamic adapter load",
+  "cycles": [
+    {
+      "cycle": 1,
+      "seconds": 716.2169511541724,
+      "seconds_excluding_trainer_cold_start": 716.2169531788677,
+      "adapter": "rl-v1",
+      "rollout_attempts": 1,
+      "rewards": [
+        0.3333333333333333,
+        0.0
+      ],
+      "post_update_response": " 9\n```\n\n"
+    },
+    {
+      "cycle": 2,
+      "seconds": 723.3743691574782,
+      "seconds_excluding_trainer_cold_start": 723.3743706308305,
+      "adapter": "rl-v2",
+      "rollout_attempts": 2,
+      "rewards": [
+        0.0,
+        0.4444444444444444
+      ],
+      "post_update_response": " 8\n+\n"
+    }
+  ],
+  "controller_phases": [
+    {
+      "phase": "wait_sglang_ready",
+      "seconds": 0.03170180693268776
+    },
+    {
+      "phase": "trainer_cold_start_wait",
+      "seconds": 217.20734084397554
+    },
+    {
+      "phase": "initial_rollout_weights_onload",
+      "seconds": 23.099320959299803,
+      "http_ack_seconds": 6.577079571783543
+    },
+    {
+      "phase": "initial_rollout_kv_onload",
+      "seconds": 5.957602748647332,
+      "http_ack_seconds": 0.3712497614324093
+    },
+    {
+      "phase": "rollout_1",
+      "seconds": 2.751333234831691
+    },
+    {
+      "phase": "rollout_offload_1",
+      "seconds": 24.799533946439624,
+      "http_ack_seconds": 7.199705129489303
+    },
+    {
+      "phase": "trainer_total_1",
+      "seconds": 368.68219518102705
+    },
+    {
+      "phase": "rollout_weights_onload_1",
+      "seconds": 26.611602503806353,
+      "http_ack_seconds": 6.532835436984897
+    },
+    {
+      "phase": "adapter_load_1",
+      "seconds": 226.93622577749193
+    },
+    {
+      "phase": "rollout_kv_onload_1",
+      "seconds": 10.347787015140057,
+      "http_ack_seconds": 0.3390430733561516
+    },
+    {
+      "phase": "post_update_rollout_1",
+      "seconds": 52.79577677324414
+    },
+    {
+      "phase": "rollout_2",
+      "seconds": 5.95552434772253
+    },
+    {
+      "phase": "rollout_offload_2",
+      "seconds": 24.291975811123848,
+      "http_ack_seconds": 7.048719983547926
+    },
+    {
+      "phase": "trainer_total_2",
+      "seconds": 291.7071264144033
+    },
+    {
+      "phase": "rollout_weights_onload_2",
+      "seconds": 26.79153568483889,
+      "http_ack_seconds": 6.41095295548439
+    },
+    {
+      "phase": "adapter_unload_2",
+      "seconds": 0.5750158745795488
+    },
+    {
+      "phase": "adapter_load_2",
+      "seconds": 348.7062612269074
+    },
+    {
+      "phase": "rollout_kv_onload_2",
+      "seconds": 10.454912565648556,
+      "http_ack_seconds": 0.6460722424089909
+    },
+    {
+      "phase": "post_update_rollout_2",
+      "seconds": 11.42047780379653
+    },
+    {
+      "phase": "rollout_final_offload",
+      "seconds": 24.067083682864904,
+      "http_ack_seconds": 6.661260424181819
+    }
+  ],
+  "trainer_phases": {
+    "trainer_cold_load": {
+      "min_seconds": 18.37880643038079,
+      "max_seconds": 78.30609175004065
+    },
+    "trainer_initial_offload": {
+      "min_seconds": 51.01554912235588,
+      "max_seconds": 51.01924450695515,
+      "min_direct_tms_seconds": 35.55643296893686,
+      "max_direct_tms_seconds": 50.158583864569664
+    },
+    "trainer_onload_1": {
+      "min_seconds": 18.25842004083097,
+      "max_seconds": 18.261622168123722,
+      "min_direct_tms_seconds": 16.534379536285996,
+      "max_direct_tms_seconds": 18.24923214595765
+    },
+    "rl_train_1": {
+      "min_seconds": 271.96446927217767,
+      "max_seconds": 272.07959764730185
+    },
+    "adapter_export_1": {
+      "min_seconds": 7.3584152101539075,
+      "max_seconds": 7.6950372899882495
+    },
+    "trainer_offload_1": {
+      "min_seconds": 62.837414482142776,
+      "max_seconds": 62.83932156814262,
+      "min_direct_tms_seconds": 30.711465726140887,
+      "max_direct_tms_seconds": 36.08723660418764
+    },
+    "trainer_onload_2": {
+      "min_seconds": 16.879170335829258,
+      "max_seconds": 16.882183483801782,
+      "min_direct_tms_seconds": 15.62927314080298,
+      "max_direct_tms_seconds": 16.869116511195898
+    },
+    "rl_train_2": {
+      "min_seconds": 196.9064712910913,
+      "max_seconds": 197.05460452102125
+    },
+    "adapter_export_2": {
+      "min_seconds": 7.598115980159491,
+      "max_seconds": 7.783634732943028
+    },
+    "trainer_offload_2": {
+      "min_seconds": 61.7029044367373,
+      "max_seconds": 61.705733594018966,
+      "min_direct_tms_seconds": 30.349559418857098,
+      "max_direct_tms_seconds": 35.74122989689931
+    },
+    "trainer_final_cleanup_onload": {
+      "min_seconds": 17.07659348892048,
+      "max_seconds": 17.07828034600243,
+      "min_direct_tms_seconds": 15.811836263164878,
+      "max_direct_tms_seconds": 17.06797533109784
+    }
+  },
+  "updates": [
+    {
+      "cycle": 1,
+      "grad_norm": 4.499090102711807,
+      "changed_tensors_per_rank": [
+        197,
+        197,
+        197,
+        197,
+        197,
+        197,
+        197,
+        197,
+        202,
+        202,
+        202,
+        202,
+        202,
+        202,
+        202,
+        202,
+        204,
+        204,
+        204,
+        204,
+        204,
+        204,
+        204,
+        204
+      ],
+      "sample_metrics": [
+        {
+          "policy_loss": -0.49866998195648193,
+          "clip_fraction": 0.0,
+          "rollout_train_logprob_abs_diff": 0.07038946449756622
+        },
+        {
+          "policy_loss": 0.4635154604911804,
+          "clip_fraction": 0.0,
+          "rollout_train_logprob_abs_diff": 0.07817944884300232
+        }
+      ]
+    },
+    {
+      "cycle": 2,
+      "grad_norm": 4.563592649289849,
+      "changed_tensors_per_rank": [
+        198,
+        198,
+        198,
+        199,
+        200,
+        198,
+        198,
+        201,
+        202,
+        202,
+        202,
+        202,
+        202,
+        202,
+        202,
+        202,
+        204,
+        204,
+        205,
+        205,
+        206,
+        205,
+        205,
+        204
+      ],
+      "sample_metrics": [
+        {
+          "policy_loss": 0.4990893006324768,
+          "clip_fraction": 0.25,
+          "rollout_train_logprob_abs_diff": 0.2042490541934967
+        },
+        {
+          "policy_loss": -0.4832596182823181,
+          "clip_fraction": 0.0,
+          "rollout_train_logprob_abs_diff": 0.054185688495635986
+        }
+      ]
+    }
+  ],
+  "adapter_export": {
+    "tensor_count": 1392,
+    "payload_bytes": 6133469184,
+    "safetensors_file_bytes": 6133680216,
+    "changed_hf_tensors_v1_to_v2": 703,
+    "changed_layer_coverage": [
+      0,
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92
+    ]
+  },
+  "trainer_physical_storage": {
+    "base_bytes": 1640452509568,
+    "adapter_bytes": 6317629440,
+    "packed_expert_bytes": 1446456066048
+  },
+  "peak_pytorch_allocated_gib": 113.63803243637085,
+  "peak_physical_device_used_gib": 126.0966796875,
+  "checkpoint": {
+    "training_exit": "COMPLETED 0:0 at 2026-09-12T13:52:24 UTC",
+    "adapter_shards": 24,
+    "optimizer_shards": 24,
+    "all_file_bytes": 18959782001
+  },
+  "local_staging_validation": {
+    "copy_seconds_per_node": [
+      3.406202557962388,
+      3.6037443140521646,
+      3.9290510728023946
+    ],
+    "source_cache": "warm after diagnostic prefetch",
+    "serving_check": "NOT COMPLETED: node failure before the extra serving comparison",
+    "full_cycle_with_staging_flag": "NOT RUN"
+  },
+  "limitations": [
+    "Both measured filesystem adapter loads stalled in mmap page faults and required diagnostic sequential prefetch; these are observed recovery-inclusive times, not steady-state throughput.",
+    "Ray train.py and CUDA IPC streaming weight sync were not exercised.",
+    "Short-context engineering smoke reward; no model-quality or training/serving numerical-parity claim.",
+    "NodeDown ended the allocation at 13:54:02 UTC, after both cycles and the successful training/checkpoint exit."
+  ]
+}

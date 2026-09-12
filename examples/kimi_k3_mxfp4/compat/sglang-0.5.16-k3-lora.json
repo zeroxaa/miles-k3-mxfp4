@@ -1,0 +1,31 @@
+{
+  "source": "SGLang 0.5.16 source extracted from the previously validated inference container",
+  "upstream_k3_lora_pr": "https://github.com/sgl-project/sglang/pull/37704",
+  "upstream_head": "9574eb1b1daca8d795ed8cf824c4b7094ea4191e",
+  "torch": "2.11.0+cu129",
+  "sglang_kernel": "0.4.5+cu129",
+  "flashinfer_python": "0.6.15.post1",
+  "transport": "Existing SGLang load_lora_adapter filesystem API; no newer streamed weight-update RPC backport",
+  "notes": [
+    "Adapters use ordinary CPU backup; lora_no_cpu_backup is not enabled",
+    "Inference experts use EP1 with TP8; the trainer uses EP8 with TP8",
+    "The patch adapts K3 LoRA shape/gating/Marlin fixes and lora_active to the container source",
+    "K3_RL_TRACE_DIR records per-GPU TMS completion; PP HTTP acknowledgement alone does not establish a safe handoff",
+    "Pass --experts-shared-outer-loras explicitly when starting without an initial adapter"
+  ],
+  "base_file_sha256": {
+    "python/sglang/kernels/ops/moe/fused_moe_lora_kernel.py": "0042c5aabfee2bed6985a9e3796dbabe2426a9ec50fe9c5f23c7b48754e123b4",
+    "python/sglang/srt/layers/quantization/mxfp4.py": "ca89736f10bf56fe710775711c67f2bc4b0a0af3907139af6420041f93582aab",
+    "python/sglang/srt/lora/layers.py": "740f0b2692973afd67dbd73ac48e113dffdd463c7fc116b83817bd0268b8c7c2",
+    "python/sglang/srt/lora/lora.py": "368221bec72a8c75e900e46b76fd80c6c15a1adf929b9e069684c159c89bacee",
+    "python/sglang/srt/lora/lora_manager.py": "80129aa21a3d0bc9ea0678a80182a7dcea7639f5219f2edfffefd29d22f13ef7",
+    "python/sglang/srt/lora/lora_moe_runner_marlin.py": "f901cdcb79a9d4fcfdeccc8ed38ea82b88fd3eb9459514c4fa89f4cf9c01e1c0",
+    "python/sglang/srt/lora/lora_moe_runners.py": "6fb25d71031e67e6f13f67a078c7994c4f72322c01964dfed01cd4ebe7f2aab2",
+    "python/sglang/srt/lora/marlin_lora_temp/lora_layer.py": "6ec8f8152e9888ab02a2dfc98e3b951f1e54e1130a762d481a340f541d9ff9d7",
+    "python/sglang/srt/lora/mem_pool.py": "883bb4302eeb0e97f0ad58f19fc094011cf97465f1ee36c5ade5d0b7e2c54fb7",
+    "python/sglang/srt/lora/utils.py": "fe0244111e05602976e905f048f2d9b47b62157a6c5a1aaa7afd3adb2dbde846",
+    "python/sglang/srt/models/kimi_k3.py": "0b76c3d716eb39bafbaa258468f4edbdaabd61d0f5bfc5605a6f2333c1f9df5a",
+    "python/sglang/srt/server_args.py": "716df3ae1563ca1a24c0bbc008c78839058e2d4e0f420224e3606feded84af62",
+    "python/sglang/srt/utils/torch_memory_saver_adapter.py": "196266b5ac6c7a805b36c9953fcdd9cafb0dcc3ac7a9e25aae6edf34a8c6fba9"
+  }
+}

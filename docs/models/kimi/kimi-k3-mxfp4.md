@@ -3,6 +3,14 @@ title: Kimi K3 MXFP4 LoRA experiment
 description: Frozen native MXFP4 experts with BF16 computation and selectable trainable layers.
 ---
 
+The separate [colocated RL integration instructions](../../../examples/kimi_k3_mxfp4/colocated_rl.md)
+and [24-H200 results](../../../examples/kimi_k3_mxfp4/results/rl_cycle_h200_24.md)
+describe two real rollout/training/handoff cycles completed on 2026-09-12.
+They used the same 24 GPUs and full 93-layer model, with all-layer LoRA. The
+observed cycles took 716.2 and 723.4 seconds, including shared-filesystem stalls
+recovered by diagnostic prefetches. This validates the experimental handoff;
+it does not establish steady-state throughput or native Ray/CUDA IPC integration.
+
 This experimental trainer reuses the complete K3 architecture and native Miles
 LoRA adapters. Its model type is `kimi-k3-mxfp4`; the model still has 93 layers
 and 896 routed experts per MoE layer. It does not require creating a BF16 copy
@@ -18,7 +26,7 @@ of the checkpoint.
 | Other base weights | Existing K3 precision policy, predominantly BF16, with marked FP32 tensors preserved |
 | Trainable parameters | Native LoRA adapters in the selected layers only |
 | Frozen layers' adapters | Still present for the existing complete adapter export/resume layout |
-| Rollout | Existing model architecture and adapter tensor names; online synchronization is not validated by this experiment |
+| Rollout | Existing model architecture and adapter names; a separate colocated RL harness validates filesystem adapter handoff |
 
 The layer spec replaces only the routed expert linear builders. It keeps KDA,
 MLA, SiTU, attention residuals, routing, shared experts and native adapter export
@@ -114,7 +122,9 @@ distributed optimizer correctness, end-to-end language-model loss quality or
 online rollout compatibility.
 
 The reference expert backend currently requires BF16 compute, ETP1 and
-Megatron DDP. Trainer offload, TE op fusion, FP8/FP4 compute and FSDP are rejected.
+Megatron DDP. Native trainer offload, TE op fusion, FP8/FP4 compute and FSDP are rejected.
+The colocated RL harness below owns a separate, explicitly tested TMS region;
+it does not enable the native Ray actor's offload route.
 It supports first-order gradients only and uses sequential expert GEMMs, so
 throughput is expected to be substantially below a tuned fused implementation.
 
